@@ -3,8 +3,8 @@
 ## Scope
 
 This document defines the minimal automation skeleton for MixPG case setup.
-At this stage, automation only covers safe preparation tasks and explicitly
-does not run build, preprocess, solver, or postprocess commands.
+At this stage, automation supports the build stage only and explicitly does not
+run preprocess, solver, or postprocess commands.
 
 The goal of this skeleton is to make later stages easy to add without mixing
 planning, filesystem preparation, and execution responsibilities.
@@ -21,9 +21,8 @@ planning, filesystem preparation, and execution responsibilities.
 ### Executor
 
 - verify required paths exist before doing any file operations
-- prepare the build directory conservatively
-- copy required example input files into the build directory
-- write or update the machine-readable state file
+- call the repository build preparation flow through `scripts/prepare_visco_build.sh`
+- record build-stage logs and results in the machine-readable state file
 - stop immediately on validation or filesystem errors
 
 ### State Tracking
@@ -49,8 +48,8 @@ Minimal required sections:
 - `failure` object or `null`
 - `next_step` hint for the next automation layer
 
-The current executor only updates the safe preparation stage, but the format
-should already be able to hold later results from:
+The current executor updates the build stage and records the build-stage log,
+but the format should already be able to hold later results from:
 
 - build
 - preprocess
@@ -62,13 +61,12 @@ should already be able to hold later results from:
 Implemented now:
 
 - path validation
-- build directory preparation
-- input staging
+- build-stage execution through the repository build preparation script
+- build log capture
 - state file writing
 
 Explicitly deferred:
 
-- CMake or build
 - preprocess executables
 - driver execution
 - postprocess execution
@@ -79,7 +77,8 @@ Explicitly deferred:
 
 - the planner must not perform filesystem changes
 - the executor must not infer permission for destructive cleanup; `--clean` stays opt-in
-- the executor must not invoke CMake, MPI, preprocessors, drivers, or postprocess tools
+- the executor may invoke only the repository build preparation flow for this stage
+- the executor must not invoke preprocessors, drivers, or postprocess tools
 - the state file should describe what happened, not invent results for unimplemented stages
 
 ## Minimal Usage
@@ -100,4 +99,12 @@ scripts/mixpg_executor.sh --clean
 ```
 
 The current script is only a safe preparation step. A successful run means the
-build directory is ready for later stages, not that MixPG has been built or run.
+build stage completed and the workspace is ready for preprocess in a later step.
+
+## Usage Notes
+
+- the executor writes a build log next to the state file under `logs/build-stage.log`
+- if the build directory already exists, the run fails unless `--clean` is provided
+- on success, the state file marks `build.status` as `completed`
+- the state file also records the build script path, executed command, log file, and exit code
+- on failure, the state file records the exit code and log file path under `failure`

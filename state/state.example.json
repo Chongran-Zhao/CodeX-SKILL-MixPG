@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "workflow": "mixpg-safe-prepare",
-  "current_stage": "executor_safe_prepare",
+  "workflow": "mixpg-build-stage",
+  "current_stage": "build",
   "status": "ready",
   "requested": {
     "clean_build": false
@@ -15,12 +15,17 @@
   },
   "stages": {
     "safe_prepare": {
-      "status": "ready",
+      "status": "completed",
       "build_dir_action": "created",
       "input_copy": "copied"
     },
     "build": {
-      "status": "not_started"
+      "status": "completed",
+      "script": "/Users/example/CodeX-SKILL-MixPG/scripts/prepare_visco_build.sh",
+      "command": "/Users/example/CodeX-SKILL-MixPG/scripts/prepare_visco_build.sh --repo-root /Users/example/MixPERIGEE --build-dir /Users/example/build_MixPG",
+      "log_file": "/Users/example/CodeX-SKILL-MixPG/state/logs/build-stage.log",
+      "build_dir_exists_before": false,
+      "exit_code": 0
     },
     "preprocess": {
       "status": "not_started"
@@ -33,5 +38,5 @@
     }
   },
   "failure": null,
-  "next_step": "build_not_implemented"
+  "next_step": "preprocess_not_implemented"
 }
