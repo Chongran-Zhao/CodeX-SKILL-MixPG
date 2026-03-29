@@ -3,8 +3,8 @@
 ## Scope
 
 This document defines the minimal automation skeleton for MixPG case setup.
-At this stage, automation supports the build and preprocess stages only and
-explicitly does not run driver or postprocess commands.
+At this stage, automation supports the build, preprocess, and driver stages
+only and explicitly does not run postprocess commands.
 
 The goal of this skeleton is to make later stages easy to add without mixing
 planning, filesystem preparation, and execution responsibilities.
@@ -24,8 +24,11 @@ planning, filesystem preparation, and execution responsibilities.
 - call the repository build preparation flow through `scripts/prepare_visco_build.sh`
 - determine preprocess case type conservatively from the documented YAML rules
 - run `./preprocess3d` or `./preprocess3d` then `./preprocess3d_init` as required
+- read the recorded preprocess case type from state before selecting a driver
+- run the documented driver command with `mpirun -np <cpu_size>`
 - record build-stage logs and results in the machine-readable state file
 - record preprocess-stage logs and results in the machine-readable state file
+- record driver-stage logs and results in the machine-readable state file
 - stop immediately on validation or filesystem errors
 
 ### State Tracking
@@ -69,11 +72,12 @@ Implemented now:
 - preprocess input validation
 - conservative case detection from `EBC` and `paras_preprocessor_init.yml`
 - preprocess command execution and log capture
+- driver selection from recorded preprocess case type
+- driver command execution and log capture
 - state file writing
 
 Explicitly deferred:
 
-- driver execution
 - postprocess execution
 - retry or resume orchestration
 - automatic failure recovery
@@ -85,7 +89,9 @@ Explicitly deferred:
 - the executor may invoke only the repository build preparation flow for this stage
 - the executor may invoke only documented preprocess commands after successful build
 - the executor must fail if case type cannot be determined safely from current YAML files
-- the executor must not invoke drivers or postprocess tools
+- the executor must fail if driver selection is ambiguous under current documentation
+- the executor may invoke only the documented driver command after successful preprocess
+- the executor must not invoke postprocess tools
 - the state file should describe what happened, not invent results for unimplemented stages
 
 ## Minimal Usage
@@ -105,13 +111,15 @@ Optional safe cleanup:
 scripts/mixpg_executor.sh --clean
 ```
 
-The current script now runs build and preprocess only. A successful run means
-the case reached the end of preprocess and is ready for a later driver step.
+The current script now runs build, preprocess, and driver only. A successful
+run means the case reached the end of driver and is ready for a later
+postprocess step.
 
 ## Usage Notes
 
 - the executor writes a build log next to the state file under `logs/build-stage.log`
 - the executor writes a preprocess log next to the state file under `logs/preprocess-stage.log`
+- the executor writes a driver log next to the state file under `logs/driver-stage.log`
 - if the build directory already exists, the run fails unless `--clean` is provided
 - on success, the state file marks `build.status` as `completed`
 - case detection is conservative:
@@ -119,4 +127,8 @@ the case reached the end of preprocess and is ready for a later driver step.
   displacement requires empty `EBC` and exactly one non-empty init-YAML `Dirichlet_velo_*` block
 - the state file also records the build script path, executed command, log file, and exit code
 - for preprocess, the state file records case type, detection reason, commands, log file, resolved `geo_file_base`, and exit codes
+- driver selection uses the already recorded `preprocess.case_type` from state instead of re-detecting case type
+- traction uses `./mixed_ga_driver`
+- displacement is only accepted when exactly one documented executable is present: `./mixed_ga_driver_displacement` or `./mixed_ga_driver_disp`
+- for driver, the state file records the selected executable, `cpu_size`, command, log file, and exit code
 - on failure, the state file records the exit code and log file path under `failure`

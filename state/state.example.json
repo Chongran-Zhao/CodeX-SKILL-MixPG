@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "workflow": "mixpg-build-preprocess",
-  "current_stage": "preprocess",
+  "workflow": "mixpg-build-preprocess-driver",
+  "current_stage": "driver",
   "status": "ready",
   "requested": {
     "clean_build": false
@@ -46,12 +46,21 @@
       ]
     },
     "driver": {
-      "status": "not_started"
+      "status": "completed",
+      "case_type": "traction",
+      "reason": "recorded preprocess case type is traction, so use the non-displacement driver",
+      "driver_file": "/Users/example/build_MixPG/paras_driver.yml",
+      "driver_file_present": true,
+      "cpu_size": "6",
+      "executable": "/Users/example/build_MixPG/mixed_ga_driver",
+      "command": "mpirun -np 6 /Users/example/build_MixPG/mixed_ga_driver | tee driver_log.txt",
+      "log_file": "/Users/example/CodeX-SKILL-MixPG/state/logs/driver-stage.log",
+      "exit_code": 0
     },
     "postprocess": {
       "status": "not_started"
     }
   },
   "failure": null,
-  "next_step": "driver_not_implemented"
+  "next_step": "postprocess_not_implemented"
 }

@@ -11,12 +11,14 @@ build_script="${script_dir}/prepare_visco_build.sh"
 log_dir=""
 build_log=""
 preprocess_log=""
+driver_log=""
 
 example_dir=""
 config_file=""
 input_dir=""
 preprocessor_file=""
 preprocessor_init_file=""
+driver_file="${build_dir}/paras_driver.yml"
 build_dir_action="unknown"
 input_copy_status="pending"
 build_status="not_started"
@@ -30,6 +32,14 @@ preprocess_geo_file_base=""
 preprocess_geo_file_resolved=""
 preprocess_runtime_yaml_present="false"
 preprocess_init_yaml_present="false"
+driver_status="not_started"
+driver_case_type="unknown"
+driver_reason="not_determined"
+driver_executable=""
+driver_command_display=""
+driver_exit_code="null"
+driver_cpu_size="unknown"
+driver_file_present="false"
 top_level_status="pending"
 next_step="build_pending"
 failure_json="null"
@@ -45,18 +55,21 @@ Usage:
 Implemented stages:
   - build
   - preprocess
+  - driver
 
-Build/preprocess tasks only:
+Build/preprocess/driver tasks only:
   - validate build prerequisites
   - run the repository build preparation flow
   - detect preprocess case type conservatively
   - run the required preprocess command(s)
+  - read the recorded preprocess case type from state
+  - run the required driver command
   - write/update a state file
   - capture stage logs
 
 Guardrails:
-  - only build and preprocess-stage support are implemented
-  - does not run solver, driver, or postprocess commands
+  - only build, preprocess, and driver-stage support are implemented
+  - does not run postprocess commands
   - only removes build directory contents when --clean is explicitly provided
 EOF
 }
@@ -67,9 +80,11 @@ resolve_paths() {
   input_dir="${example_dir}/input/creep"
   preprocessor_file="${build_dir}/paras_preprocessor.yml"
   preprocessor_init_file="${build_dir}/paras_preprocessor_init.yml"
+  driver_file="${build_dir}/paras_driver.yml"
   log_dir="$(dirname "$state_file")/logs"
   build_log="${log_dir}/build-stage.log"
   preprocess_log="${log_dir}/preprocess-stage.log"
+  driver_log="${log_dir}/driver-stage.log"
 }
 
 json_bool() {
@@ -87,6 +102,8 @@ record_failure() {
   local exit_code="$2"
   if [[ "$stage" == "preprocess" ]]; then
     log_file="$preprocess_log"
+  elif [[ "$stage" == "driver" ]]; then
+    log_file="$driver_log"
   fi
   failure_json=$(cat <<EOF
 {
@@ -97,6 +114,48 @@ record_failure() {
 }
 EOF
 )
+}
+
+extract_state_string() {
+  local stage="$1"
+  local key="$2"
+  awk -v stage="$stage" -v key="$key" '
+    $0 ~ "^[[:space:]]*\"" stage "\":[[:space:]]*\\{" {
+      instage=1
+      next
+    }
+    instage && $0 ~ "^[[:space:]]*}" {
+      instage=0
+    }
+    instage && $0 ~ "^[[:space:]]*\"" key "\":" {
+      sub(/^[^:]*:[[:space:]]*/, "", $0)
+      sub(/,[[:space:]]*$/, "", $0)
+      gsub(/^"/, "", $0)
+      gsub(/"$/, "", $0)
+      print $0
+      exit
+    }
+  ' "$state_file"
+}
+
+extract_state_scalar() {
+  local stage="$1"
+  local key="$2"
+  awk -v stage="$stage" -v key="$key" '
+    $0 ~ "^[[:space:]]*\"" stage "\":[[:space:]]*\\{" {
+      instage=1
+      next
+    }
+    instage && $0 ~ "^[[:space:]]*}" {
+      instage=0
+    }
+    instage && $0 ~ "^[[:space:]]*\"" key "\":" {
+      sub(/^[^:]*:[[:space:]]*/, "", $0)
+      sub(/,[[:space:]]*$/, "", $0)
+      print $0
+      exit
+    }
+  ' "$state_file"
 }
 
 validate_prerequisites() {
@@ -129,6 +188,19 @@ validate_prerequisites() {
     write_state
     exit 1
   fi
+}
+
+extract_cpu_size() {
+  local source_file="$1"
+  awk '
+    /^[[:space:]]*cpu_size[[:space:]]*:/ {
+      sub(/^[^:]*:[[:space:]]*/, "", $0)
+      sub(/[[:space:]]*#.*/, "", $0)
+      gsub(/[[:space:]]*/, "", $0)
+      print $0
+      exit
+    }
+  ' "$source_file"
 }
 
 yaml_block_has_entries() {
@@ -356,6 +428,159 @@ run_preprocess_stage() {
   write_state
 }
 
+validate_driver_inputs() {
+  local recorded_preprocess_status=""
+  local displacement_candidates=()
+
+  if [[ ! -f "$state_file" ]]; then
+    echo "State file not found for driver stage: $state_file" >&2
+    current_stage="driver"
+    record_failure "state file not found for driver stage" 1
+    driver_status="failed"
+    top_level_status="failed"
+    next_step="inspect_driver_log"
+    write_state
+    exit 1
+  fi
+
+  recorded_preprocess_status="$(extract_state_string "preprocess" "status")"
+  driver_case_type="$(extract_state_string "preprocess" "case_type")"
+
+  if [[ "$recorded_preprocess_status" != "completed" ]]; then
+    echo "Preprocess stage is not recorded as completed in state." >&2
+    current_stage="driver"
+    record_failure "preprocess stage is not recorded as completed in state" 1
+    driver_status="failed"
+    top_level_status="failed"
+    next_step="inspect_driver_log"
+    write_state
+    exit 1
+  fi
+
+  if [[ "$driver_case_type" != "traction" && "$driver_case_type" != "displacement" ]]; then
+    echo "Recorded preprocess case type is missing or unsupported: $driver_case_type" >&2
+    current_stage="driver"
+    record_failure "recorded preprocess case type is missing or unsupported" 1
+    driver_status="failed"
+    top_level_status="failed"
+    next_step="inspect_driver_log"
+    write_state
+    exit 1
+  fi
+
+  if [[ ! -f "$driver_file" ]]; then
+    echo "Required driver file not found: $driver_file" >&2
+    current_stage="driver"
+    record_failure "required driver file not found" 1
+    driver_status="failed"
+    top_level_status="failed"
+    next_step="inspect_driver_log"
+    write_state
+    exit 1
+  fi
+  driver_file_present="true"
+
+  driver_cpu_size="$(extract_cpu_size "$preprocessor_file")"
+  if [[ -z "$driver_cpu_size" ]]; then
+    driver_cpu_size="$(extract_cpu_size "$driver_file")"
+  fi
+  if [[ -z "$driver_cpu_size" ]]; then
+    echo "cpu_size could not be determined from preprocess or driver inputs." >&2
+    current_stage="driver"
+    record_failure "cpu_size could not be determined from inputs" 1
+    driver_status="failed"
+    top_level_status="failed"
+    next_step="inspect_driver_log"
+    write_state
+    exit 1
+  fi
+
+  if ! command -v mpirun >/dev/null 2>&1; then
+    echo "Required command not found: mpirun" >&2
+    current_stage="driver"
+    record_failure "required command not found: mpirun" 1
+    driver_status="failed"
+    top_level_status="failed"
+    next_step="inspect_driver_log"
+    write_state
+    exit 1
+  fi
+
+  if [[ "$driver_case_type" == "traction" ]]; then
+    driver_executable="${build_dir}/mixed_ga_driver"
+    driver_reason="recorded preprocess case type is traction, so use the non-displacement driver"
+    if [[ ! -x "$driver_executable" ]]; then
+      echo "Required driver executable not found: $driver_executable" >&2
+      current_stage="driver"
+      record_failure "required driver executable not found: mixed_ga_driver" 1
+      driver_status="failed"
+      top_level_status="failed"
+      next_step="inspect_driver_log"
+      write_state
+      exit 1
+    fi
+  else
+    if [[ -x "${build_dir}/mixed_ga_driver_displacement" ]]; then
+      displacement_candidates+=( "${build_dir}/mixed_ga_driver_displacement" )
+    fi
+    if [[ -x "${build_dir}/mixed_ga_driver_disp" ]]; then
+      displacement_candidates+=( "${build_dir}/mixed_ga_driver_disp" )
+    fi
+
+    if [[ "${#displacement_candidates[@]}" -ne 1 ]]; then
+      echo "Displacement driver could not be determined safely from documented workflow." >&2
+      current_stage="driver"
+      record_failure "displacement driver could not be determined safely from documented workflow" 1
+      driver_status="failed"
+      top_level_status="failed"
+      next_step="inspect_driver_log"
+      write_state
+      exit 1
+    fi
+
+    driver_executable="${displacement_candidates[0]}"
+    driver_reason="recorded preprocess case type is displacement, and exactly one documented displacement driver executable is present"
+  fi
+}
+
+run_driver_stage() {
+  driver_status="running"
+  current_stage="driver"
+  top_level_status="running"
+  next_step="driver_running"
+  driver_command_display="mpirun -np ${driver_cpu_size} ${driver_executable} | tee driver_log.txt"
+  write_state
+
+  {
+    printf '[mixpg] driver case type from state: %s\n' "$driver_case_type"
+    printf '[mixpg] driver reason: %s\n' "$driver_reason"
+    printf '[mixpg] driver file: %s\n' "$driver_file"
+    printf '[mixpg] driver cpu_size: %s\n' "$driver_cpu_size"
+    printf '[mixpg] driver executable: %s\n' "$driver_executable"
+    printf '[mixpg] driver command: %s\n' "$driver_command_display"
+  } >"$driver_log"
+
+  if (
+    cd "$build_dir"
+    mpirun -np "$driver_cpu_size" "$driver_executable" | tee driver_log.txt
+  ) >>"$driver_log" 2>&1; then
+    driver_status="completed"
+    driver_exit_code=0
+    top_level_status="ready"
+    next_step="postprocess_not_implemented"
+    failure_json="null"
+  else
+    driver_exit_code=$?
+    driver_status="failed"
+    top_level_status="failed"
+    next_step="inspect_driver_log"
+    current_stage="driver"
+    record_failure "driver stage failed" "$driver_exit_code"
+  fi
+
+  write_state
+}
+
 write_state() {
   local state_dir
   state_dir="$(dirname "$state_file")"
@@ -364,7 +589,7 @@ write_state() {
   cat > "$state_file" <<EOF
 {
   "version": 1,
-  "workflow": "mixpg-build-preprocess",
+  "workflow": "mixpg-build-preprocess-driver",
   "current_stage": "$current_stage",
   "status": "$top_level_status",
   "requested": {
@@ -406,7 +631,16 @@ write_state() {
       "exit_codes": $preprocess_exit_codes_json
     },
     "driver": {
-      "status": "not_started"
+      "status": "$driver_status",
+      "case_type": "$driver_case_type",
+      "reason": "$driver_reason",
+      "driver_file": "$driver_file",
+      "driver_file_present": $(json_bool "$driver_file_present"),
+      "cpu_size": "$driver_cpu_size",
+      "executable": "$driver_executable",
+      "command": "$driver_command_display",
+      "log_file": "$driver_log",
+      "exit_code": $driver_exit_code
     },
     "postprocess": {
       "status": "not_started"
@@ -536,8 +770,15 @@ if [[ "$build_status" == "completed" ]]; then
   run_preprocess_stage
 fi
 
+if [[ "$preprocess_status" == "completed" ]]; then
+  validate_driver_inputs
+  run_driver_stage
+fi
+
 echo "[mixpg] build stage status: $build_status"
 echo "[mixpg] preprocess stage status: $preprocess_status"
+echo "[mixpg] driver stage status: $driver_status"
 echo "[mixpg] state file: $state_file"
 echo "[mixpg] build log: $build_log"
 echo "[mixpg] preprocess log: $preprocess_log"
+echo "[mixpg] driver log: $driver_log"
