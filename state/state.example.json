@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "workflow": "mixpg-build-preprocess-driver",
-  "current_stage": "driver",
+  "workflow": "mixpg-build-preprocess-driver-postprocess",
+  "current_stage": "postprocess",
   "status": "ready",
   "requested": {
     "clean_build": false
@@ -58,9 +58,21 @@
       "exit_code": 0
     },
     "postprocess": {
-      "status": "not_started"
+      "status": "completed",
+      "reason": "using the common documented standard order shared by the references: reanalysis_proj_driver then prepostproc",
+      "cpu_size": "6",
+      "time_end": "100",
+      "commands": [
+        "mpirun -np 6 ./reanalysis_proj_driver -time_end 100",
+        "./prepostproc"
+      ],
+      "log_file": "/Users/example/CodeX-SKILL-MixPG/state/logs/postprocess-stage.log",
+      "exit_codes": [
+        0,
+        0
+      ]
     }
   },
   "failure": null,
-  "next_step": "postprocess_not_implemented"
+  "next_step": "workflow_completed"
 }

@@ -8,3 +8,4 @@
 - 2026-03-29：补充 build command 到状态文件，方便后续排障和 planner/executor 之间的可追踪交接。
 - 2026-03-29：在 build 骨架上新增 preprocess stage，按 YAML 规则保守识别 traction/displacement，并记录命令、日志、退出码和判定原因。
 - 2026-03-29：在 preprocess 骨架上新增 driver stage，复用 state 中已记录的 case type 选择 driver，并把命令、日志、cpu_size 和退出码写入状态文件。
+- 2026-03-29：新增最小 postprocess stage，按 references 共同支持的顺序运行 reanalysis_proj_driver 和 prepostproc，并写入 time_end、日志与退出码。

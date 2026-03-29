@@ -12,6 +12,7 @@ log_dir=""
 build_log=""
 preprocess_log=""
 driver_log=""
+postprocess_log=""
 
 example_dir=""
 config_file=""
@@ -40,6 +41,12 @@ driver_command_display=""
 driver_exit_code="null"
 driver_cpu_size="unknown"
 driver_file_present="false"
+postprocess_status="not_started"
+postprocess_reason="not_determined"
+postprocess_cpu_size="unknown"
+postprocess_time_end="unknown"
+postprocess_command_display="[]"
+postprocess_exit_codes_json="[]"
 top_level_status="pending"
 next_step="build_pending"
 failure_json="null"
@@ -56,20 +63,21 @@ Implemented stages:
   - build
   - preprocess
   - driver
+  - postprocess
 
-Build/preprocess/driver tasks only:
+Build/preprocess/driver/postprocess tasks only:
   - validate build prerequisites
   - run the repository build preparation flow
   - detect preprocess case type conservatively
   - run the required preprocess command(s)
   - read the recorded preprocess case type from state
   - run the required driver command
+  - run the documented postprocess command sequence
   - write/update a state file
   - capture stage logs
 
 Guardrails:
-  - only build, preprocess, and driver-stage support are implemented
-  - does not run postprocess commands
+  - only build, preprocess, driver, and postprocess-stage support are implemented
   - only removes build directory contents when --clean is explicitly provided
 EOF
 }
@@ -85,6 +93,7 @@ resolve_paths() {
   build_log="${log_dir}/build-stage.log"
   preprocess_log="${log_dir}/preprocess-stage.log"
   driver_log="${log_dir}/driver-stage.log"
+  postprocess_log="${log_dir}/postprocess-stage.log"
 }
 
 json_bool() {
@@ -104,6 +113,8 @@ record_failure() {
     log_file="$preprocess_log"
   elif [[ "$stage" == "driver" ]]; then
     log_file="$driver_log"
+  elif [[ "$stage" == "postprocess" ]]; then
+    log_file="$postprocess_log"
   fi
   failure_json=$(cat <<EOF
 {
@@ -201,6 +212,35 @@ extract_cpu_size() {
       exit
     }
   ' "$source_file"
+}
+
+extract_yaml_scalar() {
+  local source_file="$1"
+  local key="$2"
+  awk -v key="$key" '
+    $0 ~ "^[[:space:]]*" key "[[:space:]]*:" {
+      sub(/^[^:]*:[[:space:]]*/, "", $0)
+      sub(/[[:space:]]*#.*/, "", $0)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0)
+      print $0
+      exit
+    }
+  ' "$source_file"
+}
+
+compute_time_end() {
+  local initial_time="$1"
+  local initial_step="$2"
+  local final_time="$3"
+  awk -v initial_time="$initial_time" -v initial_step="$initial_step" -v final_time="$final_time" '
+    BEGIN {
+      if (initial_step <= 0 || initial_time > final_time) exit 1
+      value = (final_time - initial_time) / initial_step
+      rounded = sprintf("%.0f", value)
+      if (value - rounded > 1e-9 || rounded - value > 1e-9) exit 1
+      print rounded
+    }
+  '
 }
 
 yaml_block_has_entries() {
@@ -581,6 +621,189 @@ run_driver_stage() {
   write_state
 }
 
+validate_postprocess_inputs() {
+  local recorded_driver_status=""
+  local recorded_driver_cpu_size=""
+  local initial_time=""
+  local initial_step=""
+  local final_time=""
+
+  if [[ ! -f "$state_file" ]]; then
+    echo "State file not found for postprocess stage: $state_file" >&2
+    current_stage="postprocess"
+    record_failure "state file not found for postprocess stage" 1
+    postprocess_status="failed"
+    top_level_status="failed"
+    next_step="inspect_postprocess_log"
+    write_state
+    exit 1
+  fi
+
+  recorded_driver_status="$(extract_state_string "driver" "status")"
+  recorded_driver_cpu_size="$(extract_state_string "driver" "cpu_size")"
+
+  if [[ "$recorded_driver_status" != "completed" ]]; then
+    echo "Driver stage is not recorded as completed in state." >&2
+    current_stage="postprocess"
+    record_failure "driver stage is not recorded as completed in state" 1
+    postprocess_status="failed"
+    top_level_status="failed"
+    next_step="inspect_postprocess_log"
+    write_state
+    exit 1
+  fi
+
+  if [[ ! -f "$driver_file" ]]; then
+    echo "Required driver file not found for postprocess: $driver_file" >&2
+    current_stage="postprocess"
+    record_failure "required driver file not found for postprocess" 1
+    postprocess_status="failed"
+    top_level_status="failed"
+    next_step="inspect_postprocess_log"
+    write_state
+    exit 1
+  fi
+
+  postprocess_cpu_size="$recorded_driver_cpu_size"
+  if [[ -z "$postprocess_cpu_size" || "$postprocess_cpu_size" == "unknown" ]]; then
+    postprocess_cpu_size="$(extract_cpu_size "$preprocessor_file")"
+  fi
+  if [[ -z "$postprocess_cpu_size" || "$postprocess_cpu_size" == "unknown" ]]; then
+    postprocess_cpu_size="$(extract_cpu_size "$driver_file")"
+  fi
+  if [[ -z "$postprocess_cpu_size" || "$postprocess_cpu_size" == "unknown" ]]; then
+    echo "Postprocess cpu_size could not be determined safely." >&2
+    current_stage="postprocess"
+    record_failure "postprocess cpu_size could not be determined safely" 1
+    postprocess_status="failed"
+    top_level_status="failed"
+    next_step="inspect_postprocess_log"
+    write_state
+    exit 1
+  fi
+
+  initial_time="$(extract_yaml_scalar "$driver_file" "initial_time")"
+  initial_step="$(extract_yaml_scalar "$driver_file" "initial_step")"
+  final_time="$(extract_yaml_scalar "$driver_file" "final_time")"
+  if [[ -z "$initial_time" || -z "$initial_step" || -z "$final_time" ]]; then
+    echo "Driver time settings are missing in: $driver_file" >&2
+    current_stage="postprocess"
+    record_failure "driver time settings are missing" 1
+    postprocess_status="failed"
+    top_level_status="failed"
+    next_step="inspect_postprocess_log"
+    write_state
+    exit 1
+  fi
+
+  if ! postprocess_time_end="$(compute_time_end "$initial_time" "$initial_step" "$final_time")"; then
+    echo "time_end could not be determined safely from driver settings." >&2
+    current_stage="postprocess"
+    record_failure "time_end could not be determined safely from driver settings" 1
+    postprocess_status="failed"
+    top_level_status="failed"
+    next_step="inspect_postprocess_log"
+    write_state
+    exit 1
+  fi
+
+  if ! command -v mpirun >/dev/null 2>&1; then
+    echo "Required command not found: mpirun" >&2
+    current_stage="postprocess"
+    record_failure "required command not found: mpirun" 1
+    postprocess_status="failed"
+    top_level_status="failed"
+    next_step="inspect_postprocess_log"
+    write_state
+    exit 1
+  fi
+
+  if [[ ! -x "${build_dir}/reanalysis_proj_driver" ]]; then
+    echo "Required postprocess executable not found: ${build_dir}/reanalysis_proj_driver" >&2
+    current_stage="postprocess"
+    record_failure "required postprocess executable not found: reanalysis_proj_driver" 1
+    postprocess_status="failed"
+    top_level_status="failed"
+    next_step="inspect_postprocess_log"
+    write_state
+    exit 1
+  fi
+
+  if [[ ! -x "${build_dir}/prepostproc" ]]; then
+    echo "Required postprocess executable not found: ${build_dir}/prepostproc" >&2
+    current_stage="postprocess"
+    record_failure "required postprocess executable not found: prepostproc" 1
+    postprocess_status="failed"
+    top_level_status="failed"
+    next_step="inspect_postprocess_log"
+    write_state
+    exit 1
+  fi
+
+  postprocess_reason="using the common documented standard order shared by the references: reanalysis_proj_driver then prepostproc"
+  postprocess_command_display="[\"mpirun -np ${postprocess_cpu_size} ./reanalysis_proj_driver -time_end ${postprocess_time_end}\", \"./prepostproc\"]"
+}
+
+run_postprocess_stage() {
+  local -a postprocess_exit_codes=()
+  local command_exit_code=0
+
+  postprocess_status="running"
+  current_stage="postprocess"
+  top_level_status="running"
+  next_step="postprocess_running"
+  write_state
+
+  {
+    printf '[mixpg] postprocess reason: %s\n' "$postprocess_reason"
+    printf '[mixpg] postprocess cpu_size: %s\n' "$postprocess_cpu_size"
+    printf '[mixpg] postprocess time_end: %s\n' "$postprocess_time_end"
+    printf '[mixpg] postprocess command 1: mpirun -np %s ./reanalysis_proj_driver -time_end %s\n' "$postprocess_cpu_size" "$postprocess_time_end"
+    printf '[mixpg] postprocess command 2: ./prepostproc\n'
+  } >"$postprocess_log"
+
+  (
+    cd "$build_dir"
+    mpirun -np "$postprocess_cpu_size" ./reanalysis_proj_driver -time_end "$postprocess_time_end"
+  ) >>"$postprocess_log" 2>&1 || command_exit_code=$?
+  postprocess_exit_codes+=( "$command_exit_code" )
+  if [[ "$command_exit_code" -ne 0 ]]; then
+    postprocess_exit_codes_json="[${postprocess_exit_codes[0]}]"
+    postprocess_status="failed"
+    top_level_status="failed"
+    next_step="inspect_postprocess_log"
+    current_stage="postprocess"
+    record_failure "postprocess stage failed during reanalysis_proj_driver" "$command_exit_code"
+    write_state
+    return 1
+  fi
+
+  command_exit_code=0
+  (
+    cd "$build_dir"
+    ./prepostproc
+  ) >>"$postprocess_log" 2>&1 || command_exit_code=$?
+  postprocess_exit_codes+=( "$command_exit_code" )
+  if [[ "$command_exit_code" -ne 0 ]]; then
+    postprocess_exit_codes_json="[${postprocess_exit_codes[0]}, ${postprocess_exit_codes[1]}]"
+    postprocess_status="failed"
+    top_level_status="failed"
+    next_step="inspect_postprocess_log"
+    current_stage="postprocess"
+    record_failure "postprocess stage failed during prepostproc" "$command_exit_code"
+    write_state
+    return 1
+  fi
+
+  postprocess_exit_codes_json="[${postprocess_exit_codes[0]}, ${postprocess_exit_codes[1]}]"
+  postprocess_status="completed"
+  top_level_status="ready"
+  next_step="workflow_completed"
+  current_stage="postprocess"
+  failure_json="null"
+  write_state
+}
+
 write_state() {
   local state_dir
   state_dir="$(dirname "$state_file")"
@@ -589,7 +812,7 @@ write_state() {
   cat > "$state_file" <<EOF
 {
   "version": 1,
-  "workflow": "mixpg-build-preprocess-driver",
+  "workflow": "mixpg-build-preprocess-driver-postprocess",
   "current_stage": "$current_stage",
   "status": "$top_level_status",
   "requested": {
@@ -643,7 +866,13 @@ write_state() {
       "exit_code": $driver_exit_code
     },
     "postprocess": {
-      "status": "not_started"
+      "status": "$postprocess_status",
+      "reason": "$postprocess_reason",
+      "cpu_size": "$postprocess_cpu_size",
+      "time_end": "$postprocess_time_end",
+      "commands": $postprocess_command_display,
+      "log_file": "$postprocess_log",
+      "exit_codes": $postprocess_exit_codes_json
     }
   },
   "failure": $failure_json,
@@ -775,10 +1004,17 @@ if [[ "$preprocess_status" == "completed" ]]; then
   run_driver_stage
 fi
 
+if [[ "$driver_status" == "completed" ]]; then
+  validate_postprocess_inputs
+  run_postprocess_stage
+fi
+
 echo "[mixpg] build stage status: $build_status"
 echo "[mixpg] preprocess stage status: $preprocess_status"
 echo "[mixpg] driver stage status: $driver_status"
+echo "[mixpg] postprocess stage status: $postprocess_status"
 echo "[mixpg] state file: $state_file"
 echo "[mixpg] build log: $build_log"
 echo "[mixpg] preprocess log: $preprocess_log"
 echo "[mixpg] driver log: $driver_log"
+echo "[mixpg] postprocess log: $postprocess_log"

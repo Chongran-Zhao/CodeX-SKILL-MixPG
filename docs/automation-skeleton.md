@@ -3,8 +3,8 @@
 ## Scope
 
 This document defines the minimal automation skeleton for MixPG case setup.
-At this stage, automation supports the build, preprocess, and driver stages
-only and explicitly does not run postprocess commands.
+At this stage, automation supports the build, preprocess, driver, and
+postprocess stages.
 
 The goal of this skeleton is to make later stages easy to add without mixing
 planning, filesystem preparation, and execution responsibilities.
@@ -26,9 +26,11 @@ planning, filesystem preparation, and execution responsibilities.
 - run `./preprocess3d` or `./preprocess3d` then `./preprocess3d_init` as required
 - read the recorded preprocess case type from state before selecting a driver
 - run the documented driver command with `mpirun -np <cpu_size>`
+- run the documented postprocess sequence after successful driver completion
 - record build-stage logs and results in the machine-readable state file
 - record preprocess-stage logs and results in the machine-readable state file
 - record driver-stage logs and results in the machine-readable state file
+- record postprocess-stage logs and results in the machine-readable state file
 - stop immediately on validation or filesystem errors
 
 ### State Tracking
@@ -74,11 +76,12 @@ Implemented now:
 - preprocess command execution and log capture
 - driver selection from recorded preprocess case type
 - driver command execution and log capture
+- postprocess input validation
+- documented postprocess command execution and log capture
 - state file writing
 
 Explicitly deferred:
 
-- postprocess execution
 - retry or resume orchestration
 - automatic failure recovery
 
@@ -91,7 +94,8 @@ Explicitly deferred:
 - the executor must fail if case type cannot be determined safely from current YAML files
 - the executor must fail if driver selection is ambiguous under current documentation
 - the executor may invoke only the documented driver command after successful preprocess
-- the executor must not invoke postprocess tools
+- the executor may invoke only the common documented postprocess order shared by the references
+- the executor must fail if `time_end` cannot be derived safely from `paras_driver.yml`
 - the state file should describe what happened, not invent results for unimplemented stages
 
 ## Minimal Usage
@@ -111,15 +115,16 @@ Optional safe cleanup:
 scripts/mixpg_executor.sh --clean
 ```
 
-The current script now runs build, preprocess, and driver only. A successful
-run means the case reached the end of driver and is ready for a later
-postprocess step.
+The current script now runs build, preprocess, driver, and the minimal
+documented postprocess sequence. A successful run means the case reached the
+end of the implemented workflow.
 
 ## Usage Notes
 
 - the executor writes a build log next to the state file under `logs/build-stage.log`
 - the executor writes a preprocess log next to the state file under `logs/preprocess-stage.log`
 - the executor writes a driver log next to the state file under `logs/driver-stage.log`
+- the executor writes a postprocess log next to the state file under `logs/postprocess-stage.log`
 - if the build directory already exists, the run fails unless `--clean` is provided
 - on success, the state file marks `build.status` as `completed`
 - case detection is conservative:
@@ -131,4 +136,9 @@ postprocess step.
 - traction uses `./mixed_ga_driver`
 - displacement is only accepted when exactly one documented executable is present: `./mixed_ga_driver_displacement` or `./mixed_ga_driver_disp`
 - for driver, the state file records the selected executable, `cpu_size`, command, log file, and exit code
+- postprocess uses the conservative shared sequence from the references:
+  `mpirun -np <cpu_size> ./reanalysis_proj_driver -time_end <time_end>`
+  then `./prepostproc`
+- optional or conditional downstream tools such as `post_surface_force` and `vis_3d_mixed` are not auto-run in this step
+- for postprocess, the state file records the chosen sequence, `cpu_size`, derived `time_end`, log file, and exit codes
 - on failure, the state file records the exit code and log file path under `failure`
