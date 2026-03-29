@@ -11,3 +11,4 @@
 - 2026-03-29：新增最小 postprocess stage，按 references 共同支持的顺序运行 reanalysis_proj_driver 和 prepostproc，并写入 time_end、日志与退出码。
 - 2026-03-29：对完整 workflow 做保守维护性收敛，提炼共享失败处理与退出码数组 helper，统一各 stage 的失败写回与日志/state 一致性。
 - 2026-03-29：新增最小 resume/rerun 机制，通过 `--start-from` 做显式保守恢复，并把恢复意图与决策写入状态文件。
+- 2026-03-29：新增最小 stage-level retry policy，仅为 build 提供一次受限重试入口，并把策略、attempts 与决策写入状态文件。

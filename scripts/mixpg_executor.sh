@@ -6,6 +6,7 @@ build_dir="${HOME}/build_MixPG"
 state_file="state/state.json"
 clean_build="false"
 start_from="build"
+retry_stage=""
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 build_script="${script_dir}/prepare_visco_build.sh"
@@ -23,8 +24,11 @@ preprocessor_init_file=""
 driver_file="${build_dir}/paras_driver.yml"
 build_dir_action="unknown"
 input_copy_status="pending"
+safe_prepare_status="not_started"
 build_status="not_started"
 build_exit_code="null"
+build_attempt_count="0"
+build_max_attempts="2"
 preprocess_status="not_started"
 preprocess_case_type="unknown"
 preprocess_reason="not_determined"
@@ -34,6 +38,8 @@ preprocess_geo_file_base=""
 preprocess_geo_file_resolved=""
 preprocess_runtime_yaml_present="false"
 preprocess_init_yaml_present="false"
+preprocess_attempt_count="0"
+preprocess_max_attempts="1"
 driver_status="not_started"
 driver_case_type="unknown"
 driver_reason="not_determined"
@@ -42,12 +48,16 @@ driver_command_display=""
 driver_exit_code="null"
 driver_cpu_size="unknown"
 driver_file_present="false"
+driver_attempt_count="0"
+driver_max_attempts="1"
 postprocess_status="not_started"
 postprocess_reason="not_determined"
 postprocess_cpu_size="unknown"
 postprocess_time_end="unknown"
 postprocess_command_display="[]"
 postprocess_exit_codes_json="[]"
+postprocess_attempt_count="0"
+postprocess_max_attempts="1"
 top_level_status="pending"
 next_step="build_pending"
 failure_json="null"
@@ -60,11 +70,16 @@ resume_allowed="true"
 resume_requested_start_from="build"
 resume_effective_start_from="build"
 resume_reason="default full rerun from beginning"
+retry_requested="false"
+retry_requested_stage=""
+retry_allowed="true"
+retry_reason="no retry requested"
+retry_policy_mode="stage_level_conservative"
 
 usage() {
   cat <<'EOF'
 Usage:
-  mixpg_executor.sh [--repo-root DIR] [--build-dir DIR] [--state-file FILE] [--clean] [--start-from STAGE]
+  mixpg_executor.sh [--repo-root DIR] [--build-dir DIR] [--state-file FILE] [--clean] [--start-from STAGE] [--retry-stage STAGE]
 
 Implemented stages:
   - build
@@ -81,6 +96,7 @@ Build/preprocess/driver/postprocess tasks only:
   - run the required driver command
   - run the documented postprocess command sequence
   - support conservative explicit resume with --start-from
+  - support conservative explicit retry with --retry-stage
   - write/update a state file
   - capture stage logs
 
@@ -88,6 +104,7 @@ Guardrails:
   - only build, preprocess, driver, and postprocess-stage support are implemented
   - only removes build directory contents when --clean is explicitly provided
   - later-stage resume is allowed only when recorded state and basic artifact checks agree
+  - retry is stage-level, bounded, and only enabled where the policy explicitly allows it
 EOF
 }
 
@@ -240,6 +257,17 @@ normalize_start_from() {
 }
 
 load_state_for_resume() {
+  safe_prepare_status="$(extract_state_string "safe_prepare" "status")"
+  build_dir_action="$(extract_state_string "safe_prepare" "build_dir_action")"
+  input_copy_status="$(extract_state_string "safe_prepare" "input_copy")"
+  build_attempt_count="$(extract_state_raw "safe_prepare" "attempts")"
+  if [[ -z "$build_attempt_count" ]]; then
+    build_attempt_count="$(extract_state_raw "build" "attempts")"
+  fi
+  if [[ -z "$build_attempt_count" ]]; then
+    build_attempt_count="0"
+  fi
+
   build_status="$(extract_state_string "build" "status")"
   build_command_display="$(extract_state_string "build" "command")"
   build_log="$(extract_state_string "build" "log_file")"
@@ -253,6 +281,10 @@ load_state_for_resume() {
   preprocess_command_display="$(extract_state_raw "preprocess" "commands")"
   preprocess_log="$(extract_state_string "preprocess" "log_file")"
   preprocess_exit_codes_json="$(extract_state_raw "preprocess" "exit_codes")"
+  preprocess_attempt_count="$(extract_state_raw "preprocess" "attempts")"
+  if [[ -z "$preprocess_attempt_count" ]]; then
+    preprocess_attempt_count="0"
+  fi
   if [[ "$(extract_state_raw "preprocess" "runtime_yaml_present")" == "true" ]]; then
     preprocess_runtime_yaml_present="true"
   fi
@@ -268,6 +300,10 @@ load_state_for_resume() {
   driver_log="$(extract_state_string "driver" "log_file")"
   driver_exit_code="$(extract_state_raw "driver" "exit_code")"
   driver_cpu_size="$(extract_state_string "driver" "cpu_size")"
+  driver_attempt_count="$(extract_state_raw "driver" "attempts")"
+  if [[ -z "$driver_attempt_count" ]]; then
+    driver_attempt_count="0"
+  fi
   if [[ "$(extract_state_raw "driver" "driver_file_present")" == "true" ]]; then
     driver_file_present="true"
   fi
@@ -279,6 +315,10 @@ load_state_for_resume() {
   postprocess_command_display="$(extract_state_raw "postprocess" "commands")"
   postprocess_log="$(extract_state_string "postprocess" "log_file")"
   postprocess_exit_codes_json="$(extract_state_raw "postprocess" "exit_codes")"
+  postprocess_attempt_count="$(extract_state_raw "postprocess" "attempts")"
+  if [[ -z "$postprocess_attempt_count" ]]; then
+    postprocess_attempt_count="0"
+  fi
 }
 
 require_completed_stage_for_resume() {
@@ -359,6 +399,70 @@ validate_prerequisites() {
     echo "Required command not found: make" >&2
     fail_and_exit "build" "required command not found: make" 1 "inspect_build_log"
   fi
+}
+
+validate_retry_request() {
+  if [[ "$retry_requested" != "true" ]]; then
+    return 0
+  fi
+
+  if [[ -z "$retry_requested_stage" ]]; then
+    retry_allowed="false"
+    retry_reason="retry was requested without a stage"
+    fail_and_exit "build" "retry was requested without a stage" 1 "retry_rejected"
+  fi
+
+  if [[ "$retry_requested_stage" != "build" ]]; then
+    retry_allowed="false"
+    retry_reason="no automatic retry policy is implemented for the requested stage"
+    fail_and_exit "$retry_requested_stage" "no automatic retry policy is implemented for the requested stage" 1 "retry_rejected"
+  fi
+
+  if [[ "$resume_effective_start_from" != "build" ]]; then
+    retry_allowed="false"
+    retry_reason="retry currently reuses the build start path and must start from build"
+    fail_and_exit "build" "retry currently reuses the build start path and must start from build" 1 "retry_rejected"
+  fi
+
+  if [[ ! -f "$state_file" ]]; then
+    retry_allowed="false"
+    retry_reason="retry requested, but the state file is missing"
+    fail_and_exit "build" "retry requested, but the state file is missing" 1 "retry_rejected"
+  fi
+
+  load_state_for_resume
+
+  if [[ "$build_status" != "failed" ]]; then
+    retry_allowed="false"
+    retry_reason="build retry requires the previous build stage to be recorded as failed"
+    fail_and_exit "build" "build retry requires the previous build stage to be recorded as failed" 1 "retry_rejected"
+  fi
+
+  if [[ "$build_attempt_count" -ge "$build_max_attempts" ]]; then
+    retry_allowed="false"
+    retry_reason="build retry limit has already been reached"
+    fail_and_exit "build" "build retry limit has already been reached" 1 "retry_rejected"
+  fi
+
+  if [[ "$build_dir_action" != "blocked_existing_dir" ]]; then
+    retry_allowed="false"
+    retry_reason="build retry is only allowed for the existing-build-directory blocking case"
+    fail_and_exit "build" "build retry is only allowed for the existing-build-directory blocking case" 1 "retry_rejected"
+  fi
+
+  if [[ "$clean_build" != "true" ]]; then
+    retry_allowed="false"
+    retry_reason="build retry for an existing build directory requires explicit --clean"
+    fail_and_exit "build" "build retry for an existing build directory requires explicit --clean" 1 "retry_rejected"
+  fi
+
+  if [[ ! -d "$build_dir" ]]; then
+    retry_allowed="false"
+    retry_reason="build retry requires the blocked build directory to still exist"
+    fail_and_exit "build" "build retry requires the blocked build directory to still exist" 1 "retry_rejected"
+  fi
+
+  retry_reason="build retry allowed once because the previous failure was a blocked existing build directory and the current request explicitly uses --clean"
 }
 
 extract_cpu_size() {
@@ -842,6 +946,19 @@ write_state() {
     "allowed": $(json_bool "$resume_allowed"),
     "reason": "$resume_reason"
   },
+  "retry": {
+    "requested": $(json_bool "$retry_requested"),
+    "stage": "$retry_requested_stage",
+    "allowed": $(json_bool "$retry_allowed"),
+    "reason": "$retry_reason",
+    "policy_mode": "$retry_policy_mode",
+    "policy": {
+      "build": $build_max_attempts,
+      "preprocess": $preprocess_max_attempts,
+      "driver": $driver_max_attempts,
+      "postprocess": $postprocess_max_attempts
+    }
+  },
   "paths": {
     "repo_root": "$repo_root",
     "example_dir": "$example_dir",
@@ -851,9 +968,11 @@ write_state() {
   },
   "stages": {
     "safe_prepare": {
-      "status": "$([[ "$build_status" == "completed" ]] && echo "completed" || echo "delegated_to_build")",
+      "status": "$safe_prepare_status",
       "build_dir_action": "$build_dir_action",
-      "input_copy": "$input_copy_status"
+      "input_copy": "$input_copy_status",
+      "attempts": $build_attempt_count,
+      "max_attempts": $build_max_attempts
     },
     "build": {
       "status": "$build_status",
@@ -861,7 +980,9 @@ write_state() {
       "command": "$build_command_display",
       "log_file": "$build_log",
       "build_dir_exists_before": $(json_bool "$build_dir_exists_before"),
-      "exit_code": $build_exit_code
+      "exit_code": $build_exit_code,
+      "attempts": $build_attempt_count,
+      "max_attempts": $build_max_attempts
     },
     "preprocess": {
       "status": "$preprocess_status",
@@ -875,7 +996,9 @@ write_state() {
       "geo_file_base_resolved": "$preprocess_geo_file_resolved",
       "commands": $preprocess_command_display,
       "log_file": "$preprocess_log",
-      "exit_codes": $preprocess_exit_codes_json
+      "exit_codes": $preprocess_exit_codes_json,
+      "attempts": $preprocess_attempt_count,
+      "max_attempts": $preprocess_max_attempts
     },
     "driver": {
       "status": "$driver_status",
@@ -887,7 +1010,9 @@ write_state() {
       "executable": "$driver_executable",
       "command": "$driver_command_display",
       "log_file": "$driver_log",
-      "exit_code": $driver_exit_code
+      "exit_code": $driver_exit_code,
+      "attempts": $driver_attempt_count,
+      "max_attempts": $driver_max_attempts
     },
     "postprocess": {
       "status": "$postprocess_status",
@@ -896,7 +1021,9 @@ write_state() {
       "time_end": "$postprocess_time_end",
       "commands": $postprocess_command_display,
       "log_file": "$postprocess_log",
-      "exit_codes": $postprocess_exit_codes_json
+      "exit_codes": $postprocess_exit_codes_json,
+      "attempts": $postprocess_attempt_count,
+      "max_attempts": $postprocess_max_attempts
     }
   },
   "failure": $failure_json,
@@ -925,6 +1052,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --start-from)
       start_from="$2"
+      shift 2
+      ;;
+    --retry-stage)
+      retry_stage="$2"
       shift 2
       ;;
     --help|-h)
@@ -958,6 +1089,25 @@ else
   resume_reason="resume requested from a later stage"
 fi
 
+retry_requested_stage="$retry_stage"
+if [[ -n "$retry_stage" ]]; then
+  retry_requested="true"
+  if [[ "$start_from" == "build" ]]; then
+    start_from="$retry_stage"
+    if ! resume_effective_start_from="$(normalize_start_from "$start_from")"; then
+      echo "Unsupported --retry-stage value: $retry_stage" >&2
+      exit 1
+    fi
+    resume_requested_start_from="$start_from"
+    resume_requested="true"
+    resume_mode="resume"
+    resume_reason="retry request reuses the stage start path"
+  elif [[ "$start_from" != "$retry_stage" ]]; then
+    echo "--retry-stage and --start-from must refer to the same stage when both are provided" >&2
+    exit 1
+  fi
+fi
+
 resolve_paths
 mkdir -p "$log_dir"
 
@@ -987,6 +1137,7 @@ if [[ ! -d "$input_dir" ]]; then
   fail_and_exit "build" "input directory not found" 1 "inspect_build_log"
 fi
 
+validate_retry_request
 validate_resume_request
 
 top_level_status="running"
@@ -999,6 +1150,8 @@ case "$resume_effective_start_from" in
   build)
     validate_prerequisites
 
+    build_attempt_count=$((build_attempt_count + 1))
+    safe_prepare_status="running"
     build_status="running"
     top_level_status="running"
     current_stage="build"
@@ -1022,6 +1175,7 @@ case "$resume_effective_start_from" in
     } >"$build_log"
 
     if "${build_command[@]}" >>"$build_log" 2>&1; then
+      safe_prepare_status="completed"
       build_status="completed"
       build_exit_code=0
       input_copy_status="copied"
@@ -1030,6 +1184,7 @@ case "$resume_effective_start_from" in
       failure_json="null"
     else
       build_exit_code=$?
+      safe_prepare_status="failed"
       build_status="failed"
       input_copy_status="unknown"
       top_level_status="failed"
@@ -1055,6 +1210,7 @@ case "$resume_effective_start_from" in
     fi
     ;;
   preprocess)
+    preprocess_attempt_count=$((preprocess_attempt_count + 1))
     validate_preprocess_inputs
     run_preprocess_stage
     if [[ "$preprocess_status" == "completed" ]]; then
@@ -1067,6 +1223,7 @@ case "$resume_effective_start_from" in
     fi
     ;;
   driver)
+    driver_attempt_count=$((driver_attempt_count + 1))
     validate_driver_inputs
     run_driver_stage
     if [[ "$driver_status" == "completed" ]]; then
@@ -1075,6 +1232,7 @@ case "$resume_effective_start_from" in
     fi
     ;;
   postprocess)
+    postprocess_attempt_count=$((postprocess_attempt_count + 1))
     validate_postprocess_inputs
     run_postprocess_stage
     ;;

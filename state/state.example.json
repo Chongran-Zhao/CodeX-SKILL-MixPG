@@ -15,6 +15,19 @@
     "allowed": true,
     "reason": "resume from postprocess allowed because build, preprocess, and driver are recorded as completed and postprocess artifacts exist"
   },
+  "retry": {
+    "requested": false,
+    "stage": "",
+    "allowed": true,
+    "reason": "no retry requested",
+    "policy_mode": "stage_level_conservative",
+    "policy": {
+      "build": 2,
+      "preprocess": 1,
+      "driver": 1,
+      "postprocess": 1
+    }
+  },
   "paths": {
     "repo_root": "/Users/example/MixPERIGEE",
     "example_dir": "/Users/example/MixPERIGEE/examples/viscoelasticity_NURBS_TaylorHood",
@@ -26,7 +39,9 @@
     "safe_prepare": {
       "status": "completed",
       "build_dir_action": "created",
-      "input_copy": "copied"
+      "input_copy": "copied",
+      "attempts": 1,
+      "max_attempts": 2
     },
     "build": {
       "status": "completed",
@@ -34,7 +49,9 @@
       "command": "/Users/example/CodeX-SKILL-MixPG/scripts/prepare_visco_build.sh --repo-root /Users/example/MixPERIGEE --build-dir /Users/example/build_MixPG",
       "log_file": "/Users/example/CodeX-SKILL-MixPG/state/logs/build-stage.log",
       "build_dir_exists_before": false,
-      "exit_code": 0
+      "exit_code": 0,
+      "attempts": 1,
+      "max_attempts": 2
     },
     "preprocess": {
       "status": "completed",
@@ -52,7 +69,9 @@
       "log_file": "/Users/example/CodeX-SKILL-MixPG/state/logs/preprocess-stage.log",
       "exit_codes": [
         0
-      ]
+      ],
+      "attempts": 1,
+      "max_attempts": 1
     },
     "driver": {
       "status": "completed",
@@ -64,7 +83,9 @@
       "executable": "/Users/example/build_MixPG/mixed_ga_driver",
       "command": "mpirun -np 6 /Users/example/build_MixPG/mixed_ga_driver | tee driver_log.txt",
       "log_file": "/Users/example/CodeX-SKILL-MixPG/state/logs/driver-stage.log",
-      "exit_code": 0
+      "exit_code": 0,
+      "attempts": 1,
+      "max_attempts": 1
     },
     "postprocess": {
       "status": "completed",
@@ -79,7 +100,9 @@
       "exit_codes": [
         0,
         0
-      ]
+      ],
+      "attempts": 1,
+      "max_attempts": 1
     }
   },
   "failure": null,

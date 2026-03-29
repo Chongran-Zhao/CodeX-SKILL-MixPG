@@ -82,7 +82,6 @@ Implemented now:
 
 Explicitly deferred:
 
-- retry orchestration
 - automatic failure recovery
 
 ## Guardrails
@@ -98,6 +97,8 @@ Explicitly deferred:
 - the executor must fail if `time_end` cannot be derived safely from `paras_driver.yml`
 - later-stage resume must be explicit through `--start-from`
 - later-stage resume must be rejected unless recorded state and basic artifacts establish a complete dependency chain
+- retry must remain explicit, bounded, and stage-level
+- retry must reuse the existing rerun/resume path instead of inventing a separate execution flow
 - the state file should describe what happened, not invent results for unimplemented stages
 - the current executor is intentionally still a single script, but stage-local helpers should keep shared failure and logging behavior consistent until a later retry/resume refactor
 
@@ -171,3 +172,40 @@ Rejected paths:
 - any ambiguous or unsupported `--start-from` value
 
 The executor records both the resume intent and the effective decision in the state file under `resume`.
+
+## Retry Contract
+
+Implemented conservative retry policy:
+
+- `build`: supported with at most one retry beyond the first attempt
+
+Not implemented as automatic retry:
+
+- `preprocess`
+- `driver`
+- `postprocess`
+
+Build retry is allowed only when all of the following are true:
+
+- the user explicitly requests `--retry-stage build`
+- the previous state records `build.status` as `failed`
+- the previous state records `safe_prepare.build_dir_action` as `blocked_existing_dir`
+- the current request explicitly includes `--clean`
+- the blocked build directory still exists
+- the recorded build attempt count is still below the configured maximum
+
+This means the only supported automatic retry case is the operational case where
+the earlier build was blocked because the build directory already existed, and
+the retry is now meaningfully different because the user explicitly approved
+cleanup with `--clean`.
+
+Rejected retry cases:
+
+- any retry request for `preprocess`, `driver`, or `postprocess`
+- any retry without a prior state file
+- any retry after the configured maximum attempts has been reached
+- any retry that would repeat the same blocked build action without `--clean`
+- any retry for build failures that are not the blocked-existing-directory case
+
+Retry intent, policy, and decision are recorded under `retry` in the state
+file, while per-stage attempt counters are stored with each stage record.
