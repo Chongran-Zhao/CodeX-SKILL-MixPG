@@ -1,0 +1,4 @@
+interface:
+  display_name: "MixPG Runner"
+  short_description: "Automate MixPERIGEE mixed-case runs"
+  default_prompt: "Use $mixpg-case-runner to configure and run a MixPERIGEE mixed-case example."
