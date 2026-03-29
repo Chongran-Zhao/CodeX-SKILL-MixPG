@@ -4,7 +4,16 @@
   "current_stage": "postprocess",
   "status": "ready",
   "requested": {
-    "clean_build": false
+    "clean_build": false,
+    "start_from": "postprocess"
+  },
+  "resume": {
+    "requested": true,
+    "mode": "resume",
+    "requested_start_from": "postprocess",
+    "effective_start_from": "postprocess",
+    "allowed": true,
+    "reason": "resume from postprocess allowed because build, preprocess, and driver are recorded as completed and postprocess artifacts exist"
   },
   "paths": {
     "repo_root": "/Users/example/MixPERIGEE",

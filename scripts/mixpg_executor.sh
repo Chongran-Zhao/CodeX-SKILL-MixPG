@@ -5,6 +5,7 @@ repo_root="${HOME}/MixPERIGEE"
 build_dir="${HOME}/build_MixPG"
 state_file="state/state.json"
 clean_build="false"
+start_from="build"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 build_script="${script_dir}/prepare_visco_build.sh"
@@ -53,11 +54,17 @@ failure_json="null"
 build_dir_exists_before="false"
 build_command_display=""
 current_stage="build"
+resume_requested="false"
+resume_mode="rerun"
+resume_allowed="true"
+resume_requested_start_from="build"
+resume_effective_start_from="build"
+resume_reason="default full rerun from beginning"
 
 usage() {
   cat <<'EOF'
 Usage:
-  mixpg_executor.sh [--repo-root DIR] [--build-dir DIR] [--state-file FILE] [--clean]
+  mixpg_executor.sh [--repo-root DIR] [--build-dir DIR] [--state-file FILE] [--clean] [--start-from STAGE]
 
 Implemented stages:
   - build
@@ -73,12 +80,14 @@ Build/preprocess/driver/postprocess tasks only:
   - read the recorded preprocess case type from state
   - run the required driver command
   - run the documented postprocess command sequence
+  - support conservative explicit resume with --start-from
   - write/update a state file
   - capture stage logs
 
 Guardrails:
   - only build, preprocess, driver, and postprocess-stage support are implemented
   - only removes build directory contents when --clean is explicitly provided
+  - later-stage resume is allowed only when recorded state and basic artifact checks agree
 EOF
 }
 
@@ -194,6 +203,145 @@ extract_state_string() {
       exit
     }
   ' "$state_file"
+}
+
+extract_state_raw() {
+  local stage="$1"
+  local key="$2"
+  awk -v stage="$stage" -v key="$key" '
+    $0 ~ "^[[:space:]]*\"" stage "\":[[:space:]]*\\{" {
+      instage=1
+      next
+    }
+    instage && $0 ~ "^[[:space:]]*}" {
+      instage=0
+    }
+    instage && $0 ~ "^[[:space:]]*\"" key "\":" {
+      sub(/^[^:]*:[[:space:]]*/, "", $0)
+      sub(/,[[:space:]]*$/, "", $0)
+      print $0
+      exit
+    }
+  ' "$state_file"
+}
+
+normalize_start_from() {
+  case "$1" in
+    safe_prepare|build)
+      echo "build"
+      ;;
+    preprocess|driver|postprocess)
+      echo "$1"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+load_state_for_resume() {
+  build_status="$(extract_state_string "build" "status")"
+  build_command_display="$(extract_state_string "build" "command")"
+  build_log="$(extract_state_string "build" "log_file")"
+  build_exit_code="$(extract_state_raw "build" "exit_code")"
+
+  preprocess_status="$(extract_state_string "preprocess" "status")"
+  preprocess_case_type="$(extract_state_string "preprocess" "case_type")"
+  preprocess_reason="$(extract_state_string "preprocess" "reason")"
+  preprocess_geo_file_base="$(extract_state_string "preprocess" "geo_file_base")"
+  preprocess_geo_file_resolved="$(extract_state_string "preprocess" "geo_file_base_resolved")"
+  preprocess_command_display="$(extract_state_raw "preprocess" "commands")"
+  preprocess_log="$(extract_state_string "preprocess" "log_file")"
+  preprocess_exit_codes_json="$(extract_state_raw "preprocess" "exit_codes")"
+  if [[ "$(extract_state_raw "preprocess" "runtime_yaml_present")" == "true" ]]; then
+    preprocess_runtime_yaml_present="true"
+  fi
+  if [[ "$(extract_state_raw "preprocess" "init_yaml_present")" == "true" ]]; then
+    preprocess_init_yaml_present="true"
+  fi
+
+  driver_status="$(extract_state_string "driver" "status")"
+  driver_case_type="$(extract_state_string "driver" "case_type")"
+  driver_reason="$(extract_state_string "driver" "reason")"
+  driver_executable="$(extract_state_string "driver" "executable")"
+  driver_command_display="$(extract_state_string "driver" "command")"
+  driver_log="$(extract_state_string "driver" "log_file")"
+  driver_exit_code="$(extract_state_raw "driver" "exit_code")"
+  driver_cpu_size="$(extract_state_string "driver" "cpu_size")"
+  if [[ "$(extract_state_raw "driver" "driver_file_present")" == "true" ]]; then
+    driver_file_present="true"
+  fi
+
+  postprocess_status="$(extract_state_string "postprocess" "status")"
+  postprocess_reason="$(extract_state_string "postprocess" "reason")"
+  postprocess_cpu_size="$(extract_state_string "postprocess" "cpu_size")"
+  postprocess_time_end="$(extract_state_string "postprocess" "time_end")"
+  postprocess_command_display="$(extract_state_raw "postprocess" "commands")"
+  postprocess_log="$(extract_state_string "postprocess" "log_file")"
+  postprocess_exit_codes_json="$(extract_state_raw "postprocess" "exit_codes")"
+}
+
+require_completed_stage_for_resume() {
+  local stage="$1"
+  if [[ "$(extract_state_string "$stage" "status")" != "completed" ]]; then
+    return 1
+  fi
+}
+
+validate_resume_request() {
+  if [[ "$resume_effective_start_from" == "build" ]]; then
+    return 0
+  fi
+
+  if [[ ! -f "$state_file" ]]; then
+    resume_allowed="false"
+    resume_reason="resume requested for a later stage, but the state file is missing"
+    fail_and_exit "$resume_effective_start_from" "resume requested for a later stage, but the state file is missing" 1 "resume_rejected"
+  fi
+
+  load_state_for_resume
+
+  case "$resume_effective_start_from" in
+    preprocess)
+      if ! require_completed_stage_for_resume "build"; then
+        resume_allowed="false"
+        resume_reason="resume from preprocess requires build to be recorded as completed"
+        fail_and_exit "preprocess" "resume from preprocess requires build to be recorded as completed" 1 "resume_rejected"
+      fi
+      if [[ ! -x "${build_dir}/preprocess3d" ]]; then
+        resume_allowed="false"
+        resume_reason="resume from preprocess requires existing preprocess executables in the build directory"
+        fail_and_exit "preprocess" "resume from preprocess requires existing preprocess executables in the build directory" 1 "resume_rejected"
+      fi
+      resume_reason="resume from preprocess allowed because build is recorded as completed and preprocess artifacts exist"
+      ;;
+    driver)
+      if ! require_completed_stage_for_resume "build" || ! require_completed_stage_for_resume "preprocess"; then
+        resume_allowed="false"
+        resume_reason="resume from driver requires build and preprocess to be recorded as completed"
+        fail_and_exit "driver" "resume from driver requires build and preprocess to be recorded as completed" 1 "resume_rejected"
+      fi
+      if [[ ! -f "$preprocessor_file" || ! -f "$driver_file" ]]; then
+        resume_allowed="false"
+        resume_reason="resume from driver requires preprocess and driver input files to exist"
+        fail_and_exit "driver" "resume from driver requires preprocess and driver input files to exist" 1 "resume_rejected"
+      fi
+      resume_reason="resume from driver allowed because build and preprocess are recorded as completed and required inputs exist"
+      ;;
+    postprocess)
+      if ! require_completed_stage_for_resume "build" || ! require_completed_stage_for_resume "preprocess" || ! require_completed_stage_for_resume "driver"; then
+        resume_allowed="false"
+        resume_reason="resume from postprocess requires build, preprocess, and driver to be recorded as completed"
+        fail_and_exit "postprocess" "resume from postprocess requires build, preprocess, and driver to be recorded as completed" 1 "resume_rejected"
+      fi
+      if [[ ! -f "$driver_file" || ! -x "${build_dir}/reanalysis_proj_driver" || ! -x "${build_dir}/prepostproc" ]]; then
+        resume_allowed="false"
+        resume_reason="resume from postprocess requires driver inputs and postprocess executables to exist"
+        fail_and_exit "postprocess" "resume from postprocess requires driver inputs and postprocess executables to exist" 1 "resume_rejected"
+      fi
+      resume_reason="resume from postprocess allowed because build, preprocess, and driver are recorded as completed and postprocess artifacts exist"
+      ;;
+  esac
 }
 
 validate_prerequisites() {
@@ -683,7 +831,16 @@ write_state() {
   "current_stage": "$current_stage",
   "status": "$top_level_status",
   "requested": {
-    "clean_build": $(json_bool "$clean_build")
+    "clean_build": $(json_bool "$clean_build"),
+    "start_from": "$resume_requested_start_from"
+  },
+  "resume": {
+    "requested": $(json_bool "$resume_requested"),
+    "mode": "$resume_mode",
+    "requested_start_from": "$resume_requested_start_from",
+    "effective_start_from": "$resume_effective_start_from",
+    "allowed": $(json_bool "$resume_allowed"),
+    "reason": "$resume_reason"
   },
   "paths": {
     "repo_root": "$repo_root",
@@ -766,6 +923,10 @@ while [[ $# -gt 0 ]]; do
       clean_build="true"
       shift
       ;;
+    --start-from)
+      start_from="$2"
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -777,6 +938,25 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if ! resume_effective_start_from="$(normalize_start_from "$start_from")"; then
+  echo "Unsupported --start-from value: $start_from" >&2
+  exit 1
+fi
+
+resume_requested_start_from="$start_from"
+if [[ "$start_from" != "build" ]]; then
+  resume_requested="true"
+fi
+if [[ "$resume_effective_start_from" == "build" ]]; then
+  resume_mode="rerun"
+  if [[ "$resume_requested" == "true" ]]; then
+    resume_reason="explicit rerun from the beginning was requested"
+  fi
+else
+  resume_mode="resume"
+  resume_reason="resume requested from a later stage"
+fi
 
 resolve_paths
 mkdir -p "$log_dir"
@@ -807,64 +987,105 @@ if [[ ! -d "$input_dir" ]]; then
   fail_and_exit "build" "input directory not found" 1 "inspect_build_log"
 fi
 
-validate_prerequisites
+validate_resume_request
 
-build_status="running"
 top_level_status="running"
-next_step="build_running"
+current_stage="$resume_effective_start_from"
+next_step="${resume_effective_start_from}_pending"
+failure_json="null"
 write_state
 
-build_command=( "$build_script" "--repo-root" "$repo_root" "--build-dir" "$build_dir" )
-if [[ "$clean_build" == "true" ]]; then
-  build_command+=( "--clean" )
-fi
-printf -v build_command_display '%q ' "${build_command[@]}"
-build_command_display="${build_command_display% }"
+case "$resume_effective_start_from" in
+  build)
+    validate_prerequisites
 
-{
-  printf '[mixpg] build script: %s\n' "$build_script"
-  printf '[mixpg] build command:'
-  printf ' %q' "${build_command[@]}"
-  printf '\n'
-} >"$build_log"
+    build_status="running"
+    top_level_status="running"
+    current_stage="build"
+    next_step="build_running"
+    write_state
 
-if "${build_command[@]}" >>"$build_log" 2>&1; then
-  build_status="completed"
-  build_exit_code=0
-  input_copy_status="copied"
-  top_level_status="running"
-  next_step="preprocess_pending"
-  failure_json="null"
-else
-  build_exit_code=$?
-  build_status="failed"
-  input_copy_status="unknown"
-  top_level_status="failed"
-  next_step="inspect_build_log"
-  record_failure "build stage failed" "$build_exit_code"
-fi
+    build_command=( "$build_script" "--repo-root" "$repo_root" "--build-dir" "$build_dir" )
+    if [[ "$clean_build" == "true" ]]; then
+      build_command+=( "--clean" )
+    fi
+    printf -v build_command_display '%q ' "${build_command[@]}"
+    build_command_display="${build_command_display% }"
 
-write_state
+    {
+      printf '[mixpg] build script: %s\n' "$build_script"
+      printf '[mixpg] build command:'
+      printf ' %q' "${build_command[@]}"
+      printf '\n'
+      printf '[mixpg] start_from requested: %s\n' "$resume_requested_start_from"
+      printf '[mixpg] start_from effective: %s\n' "$resume_effective_start_from"
+    } >"$build_log"
 
-if [[ "$build_status" == "completed" ]]; then
-  validate_preprocess_inputs
-  run_preprocess_stage
-fi
+    if "${build_command[@]}" >>"$build_log" 2>&1; then
+      build_status="completed"
+      build_exit_code=0
+      input_copy_status="copied"
+      top_level_status="running"
+      next_step="preprocess_pending"
+      failure_json="null"
+    else
+      build_exit_code=$?
+      build_status="failed"
+      input_copy_status="unknown"
+      top_level_status="failed"
+      next_step="inspect_build_log"
+      record_failure "build stage failed" "$build_exit_code"
+    fi
 
-if [[ "$preprocess_status" == "completed" ]]; then
-  validate_driver_inputs
-  run_driver_stage
-fi
+    write_state
 
-if [[ "$driver_status" == "completed" ]]; then
-  validate_postprocess_inputs
-  run_postprocess_stage
-fi
+    if [[ "$build_status" == "completed" ]]; then
+      validate_preprocess_inputs
+      run_preprocess_stage
+    fi
+
+    if [[ "$preprocess_status" == "completed" ]]; then
+      validate_driver_inputs
+      run_driver_stage
+    fi
+
+    if [[ "$driver_status" == "completed" ]]; then
+      validate_postprocess_inputs
+      run_postprocess_stage
+    fi
+    ;;
+  preprocess)
+    validate_preprocess_inputs
+    run_preprocess_stage
+    if [[ "$preprocess_status" == "completed" ]]; then
+      validate_driver_inputs
+      run_driver_stage
+    fi
+    if [[ "$driver_status" == "completed" ]]; then
+      validate_postprocess_inputs
+      run_postprocess_stage
+    fi
+    ;;
+  driver)
+    validate_driver_inputs
+    run_driver_stage
+    if [[ "$driver_status" == "completed" ]]; then
+      validate_postprocess_inputs
+      run_postprocess_stage
+    fi
+    ;;
+  postprocess)
+    validate_postprocess_inputs
+    run_postprocess_stage
+    ;;
+esac
 
 echo "[mixpg] build stage status: $build_status"
 echo "[mixpg] preprocess stage status: $preprocess_status"
 echo "[mixpg] driver stage status: $driver_status"
 echo "[mixpg] postprocess stage status: $postprocess_status"
+echo "[mixpg] start_from requested: $resume_requested_start_from"
+echo "[mixpg] start_from effective: $resume_effective_start_from"
 echo "[mixpg] state file: $state_file"
 echo "[mixpg] build log: $build_log"
 echo "[mixpg] preprocess log: $preprocess_log"

@@ -82,7 +82,7 @@ Implemented now:
 
 Explicitly deferred:
 
-- retry or resume orchestration
+- retry orchestration
 - automatic failure recovery
 
 ## Guardrails
@@ -96,6 +96,8 @@ Explicitly deferred:
 - the executor may invoke only the documented driver command after successful preprocess
 - the executor may invoke only the common documented postprocess order shared by the references
 - the executor must fail if `time_end` cannot be derived safely from `paras_driver.yml`
+- later-stage resume must be explicit through `--start-from`
+- later-stage resume must be rejected unless recorded state and basic artifacts establish a complete dependency chain
 - the state file should describe what happened, not invent results for unimplemented stages
 - the current executor is intentionally still a single script, but stage-local helpers should keep shared failure and logging behavior consistent until a later retry/resume refactor
 
@@ -114,6 +116,12 @@ Optional safe cleanup:
 
 ```bash
 scripts/mixpg_executor.sh --clean
+```
+
+Explicit conservative resume:
+
+```bash
+scripts/mixpg_executor.sh --start-from preprocess
 ```
 
 The current script now runs build, preprocess, driver, and the minimal
@@ -144,3 +152,22 @@ end of the implemented workflow.
 - for postprocess, the state file records the chosen sequence, `cpu_size`, derived `time_end`, log file, and exit codes
 - on failure, the state file records the exit code and log file path under `failure`
 - the current script is already fairly long, so maintenance should prefer small shared helpers and stage-local functions instead of adding more inline branching
+
+## Resume Contract
+
+Allowed paths:
+
+- default run or `--start-from build`: rerun from the beginning
+- `--start-from safe_prepare`: treated as a rerun from the beginning
+- `--start-from preprocess`: allowed only if build is recorded as completed and preprocess artifacts still exist
+- `--start-from driver`: allowed only if build and preprocess are recorded as completed and required input files still exist
+- `--start-from postprocess`: allowed only if build, preprocess, and driver are recorded as completed and required postprocess executables still exist
+
+Rejected paths:
+
+- any later-stage resume without an existing state file
+- any later-stage resume when required predecessor stages are not recorded as `completed`
+- any later-stage resume when required inputs or executables are missing
+- any ambiguous or unsupported `--start-from` value
+
+The executor records both the resume intent and the effective decision in the state file under `resume`.
