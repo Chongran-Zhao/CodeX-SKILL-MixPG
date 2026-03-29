@@ -22,6 +22,10 @@ Safe tasks only:
   - prepare or validate the build directory
   - copy required input files
   - write/update a state file
+
+Guardrails:
+  - does not run cmake, make, preprocess, solver, or postprocess commands
+  - only removes build directory contents when --clean is explicitly provided
 EOF
 }
 
@@ -40,8 +44,11 @@ write_state() {
 {
   "version": 1,
   "workflow": "mixpg-safe-prepare",
-  "stage": "executor_safe_prepare",
+  "current_stage": "executor_safe_prepare",
   "status": "ready",
+  "requested": {
+    "clean_build": $([[ "$clean_build" == "true" ]] && echo "true" || echo "false")
+  },
   "paths": {
     "repo_root": "$repo_root",
     "example_dir": "$example_dir",
@@ -49,10 +56,27 @@ write_state() {
     "input_dir": "$input_dir",
     "build_dir": "$build_dir"
   },
-  "actions": {
-    "build_dir": "$build_action",
-    "input_copy": "$copy_status"
-  }
+  "stages": {
+    "safe_prepare": {
+      "status": "ready",
+      "build_dir_action": "$build_action",
+      "input_copy": "$copy_status"
+    },
+    "build": {
+      "status": "not_started"
+    },
+    "preprocess": {
+      "status": "not_started"
+    },
+    "driver": {
+      "status": "not_started"
+    },
+    "postprocess": {
+      "status": "not_started"
+    }
+  },
+  "failure": null,
+  "next_step": "build_not_implemented"
 }
 EOF
 }

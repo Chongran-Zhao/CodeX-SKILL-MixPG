@@ -1,8 +1,11 @@
 {
   "version": 1,
   "workflow": "mixpg-safe-prepare",
-  "stage": "executor_safe_prepare",
+  "current_stage": "executor_safe_prepare",
   "status": "ready",
+  "requested": {
+    "clean_build": false
+  },
   "paths": {
     "repo_root": "/Users/example/MixPERIGEE",
     "example_dir": "/Users/example/MixPERIGEE/examples/viscoelasticity_NURBS_TaylorHood",
@@ -10,9 +13,25 @@
     "input_dir": "/Users/example/MixPERIGEE/examples/viscoelasticity_NURBS_TaylorHood/input/creep",
     "build_dir": "/Users/example/build_MixPG"
   },
-  "actions": {
-    "build_dir": "created",
-    "input_copy": "copied"
+  "stages": {
+    "safe_prepare": {
+      "status": "ready",
+      "build_dir_action": "created",
+      "input_copy": "copied"
+    },
+    "build": {
+      "status": "not_started"
+    },
+    "preprocess": {
+      "status": "not_started"
+    },
+    "driver": {
+      "status": "not_started"
+    },
+    "postprocess": {
+      "status": "not_started"
+    }
   },
+  "failure": null,
   "next_step": "build_not_implemented"
 }
