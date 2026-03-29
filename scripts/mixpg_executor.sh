@@ -127,6 +127,53 @@ EOF
 )
 }
 
+set_stage_failed() {
+  local stage="$1"
+  case "$stage" in
+    build)
+      build_status="failed"
+      ;;
+    preprocess)
+      preprocess_status="failed"
+      ;;
+    driver)
+      driver_status="failed"
+      ;;
+    postprocess)
+      postprocess_status="failed"
+      ;;
+  esac
+  top_level_status="failed"
+}
+
+fail_and_exit() {
+  local stage="$1"
+  local message="$2"
+  local exit_code="$3"
+  local next="$4"
+  current_stage="$stage"
+  set_stage_failed "$stage"
+  next_step="$next"
+  record_failure "$message" "$exit_code"
+  write_state
+  exit 1
+}
+
+json_array_from_values() {
+  if [[ "$#" -eq 0 ]]; then
+    echo "[]"
+    return 0
+  fi
+
+  local result="["
+  local value
+  for value in "$@"; do
+    result="${result}${value}, "
+  done
+  result="${result%, }]"
+  echo "$result"
+}
+
 extract_state_string() {
   local stage="$1"
   local key="$2"
@@ -149,55 +196,20 @@ extract_state_string() {
   ' "$state_file"
 }
 
-extract_state_scalar() {
-  local stage="$1"
-  local key="$2"
-  awk -v stage="$stage" -v key="$key" '
-    $0 ~ "^[[:space:]]*\"" stage "\":[[:space:]]*\\{" {
-      instage=1
-      next
-    }
-    instage && $0 ~ "^[[:space:]]*}" {
-      instage=0
-    }
-    instage && $0 ~ "^[[:space:]]*\"" key "\":" {
-      sub(/^[^:]*:[[:space:]]*/, "", $0)
-      sub(/,[[:space:]]*$/, "", $0)
-      print $0
-      exit
-    }
-  ' "$state_file"
-}
-
 validate_prerequisites() {
   if [[ ! -x "$build_script" ]]; then
     echo "Build script is missing or not executable: $build_script" >&2
-    record_failure "build script is missing or not executable" 1
-    build_status="failed"
-    top_level_status="failed"
-    next_step="inspect_build_log"
-    write_state
-    exit 1
+    fail_and_exit "build" "build script is missing or not executable" 1 "inspect_build_log"
   fi
 
   if ! command -v cmake >/dev/null 2>&1; then
     echo "Required command not found: cmake" >&2
-    record_failure "required command not found: cmake" 1
-    build_status="failed"
-    top_level_status="failed"
-    next_step="inspect_build_log"
-    write_state
-    exit 1
+    fail_and_exit "build" "required command not found: cmake" 1 "inspect_build_log"
   fi
 
   if ! command -v make >/dev/null 2>&1; then
     echo "Required command not found: make" >&2
-    record_failure "required command not found: make" 1
-    build_status="failed"
-    top_level_status="failed"
-    next_step="inspect_build_log"
-    write_state
-    exit 1
+    fail_and_exit "build" "required command not found: make" 1 "inspect_build_log"
   fi
 }
 
@@ -343,59 +355,29 @@ detect_preprocess_case_type() {
 validate_preprocess_inputs() {
   if [[ ! -f "$preprocessor_file" ]]; then
     echo "Required preprocess file not found: $preprocessor_file" >&2
-    current_stage="preprocess"
-    record_failure "required preprocess file not found" 1
-    preprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_preprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "preprocess" "required preprocess file not found" 1 "inspect_preprocess_log"
   fi
 
   preprocess_runtime_yaml_present="true"
 
   if ! resolve_geo_file_base; then
     echo "Invalid or unresolved geo_file_base in: $preprocessor_file" >&2
-    current_stage="preprocess"
-    record_failure "invalid or unresolved geo_file_base" 1
-    preprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_preprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "preprocess" "invalid or unresolved geo_file_base" 1 "inspect_preprocess_log"
   fi
 
   if ! detect_preprocess_case_type; then
     echo "Case type could not be determined safely from preprocess YAML files." >&2
-    current_stage="preprocess"
-    record_failure "case type could not be determined safely" 1
-    preprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_preprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "preprocess" "case type could not be determined safely" 1 "inspect_preprocess_log"
   fi
 
   if [[ ! -x "${build_dir}/preprocess3d" ]]; then
     echo "Required preprocess executable not found: ${build_dir}/preprocess3d" >&2
-    current_stage="preprocess"
-    record_failure "required preprocess executable not found: preprocess3d" 1
-    preprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_preprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "preprocess" "required preprocess executable not found: preprocess3d" 1 "inspect_preprocess_log"
   fi
 
   if [[ "$preprocess_case_type" == "displacement" && ! -x "${build_dir}/preprocess3d_init" ]]; then
     echo "Required preprocess executable not found: ${build_dir}/preprocess3d_init" >&2
-    current_stage="preprocess"
-    record_failure "required preprocess executable not found: preprocess3d_init" 1
-    preprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_preprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "preprocess" "required preprocess executable not found: preprocess3d_init" 1 "inspect_preprocess_log"
   fi
 }
 
@@ -437,15 +419,9 @@ run_preprocess_stage() {
 
     preprocess_exit_codes+=( "$command_exit_code" )
     if [[ "$command_exit_code" -ne 0 ]]; then
-      preprocess_exit_codes_json="["
-      for exit_code in "${preprocess_exit_codes[@]}"; do
-        preprocess_exit_codes_json="${preprocess_exit_codes_json}${exit_code}, "
-      done
-      preprocess_exit_codes_json="${preprocess_exit_codes_json%, }]"
-      preprocess_status="failed"
-      top_level_status="failed"
+      preprocess_exit_codes_json="$(json_array_from_values "${preprocess_exit_codes[@]}")"
+      set_stage_failed "preprocess"
       next_step="inspect_preprocess_log"
-      build_exit_code=0
       current_stage="preprocess"
       record_failure "preprocess stage failed" "$command_exit_code"
       write_state
@@ -454,11 +430,7 @@ run_preprocess_stage() {
     command_exit_code=0
   done
 
-  preprocess_exit_codes_json="["
-  for exit_code in "${preprocess_exit_codes[@]}"; do
-    preprocess_exit_codes_json="${preprocess_exit_codes_json}${exit_code}, "
-  done
-  preprocess_exit_codes_json="${preprocess_exit_codes_json%, }]"
+  preprocess_exit_codes_json="$(json_array_from_values "${preprocess_exit_codes[@]}")"
 
   preprocess_status="completed"
   top_level_status="ready"
@@ -474,13 +446,7 @@ validate_driver_inputs() {
 
   if [[ ! -f "$state_file" ]]; then
     echo "State file not found for driver stage: $state_file" >&2
-    current_stage="driver"
-    record_failure "state file not found for driver stage" 1
-    driver_status="failed"
-    top_level_status="failed"
-    next_step="inspect_driver_log"
-    write_state
-    exit 1
+    fail_and_exit "driver" "state file not found for driver stage" 1 "inspect_driver_log"
   fi
 
   recorded_preprocess_status="$(extract_state_string "preprocess" "status")"
@@ -488,35 +454,17 @@ validate_driver_inputs() {
 
   if [[ "$recorded_preprocess_status" != "completed" ]]; then
     echo "Preprocess stage is not recorded as completed in state." >&2
-    current_stage="driver"
-    record_failure "preprocess stage is not recorded as completed in state" 1
-    driver_status="failed"
-    top_level_status="failed"
-    next_step="inspect_driver_log"
-    write_state
-    exit 1
+    fail_and_exit "driver" "preprocess stage is not recorded as completed in state" 1 "inspect_driver_log"
   fi
 
   if [[ "$driver_case_type" != "traction" && "$driver_case_type" != "displacement" ]]; then
     echo "Recorded preprocess case type is missing or unsupported: $driver_case_type" >&2
-    current_stage="driver"
-    record_failure "recorded preprocess case type is missing or unsupported" 1
-    driver_status="failed"
-    top_level_status="failed"
-    next_step="inspect_driver_log"
-    write_state
-    exit 1
+    fail_and_exit "driver" "recorded preprocess case type is missing or unsupported" 1 "inspect_driver_log"
   fi
 
   if [[ ! -f "$driver_file" ]]; then
     echo "Required driver file not found: $driver_file" >&2
-    current_stage="driver"
-    record_failure "required driver file not found" 1
-    driver_status="failed"
-    top_level_status="failed"
-    next_step="inspect_driver_log"
-    write_state
-    exit 1
+    fail_and_exit "driver" "required driver file not found" 1 "inspect_driver_log"
   fi
   driver_file_present="true"
 
@@ -526,24 +474,12 @@ validate_driver_inputs() {
   fi
   if [[ -z "$driver_cpu_size" ]]; then
     echo "cpu_size could not be determined from preprocess or driver inputs." >&2
-    current_stage="driver"
-    record_failure "cpu_size could not be determined from inputs" 1
-    driver_status="failed"
-    top_level_status="failed"
-    next_step="inspect_driver_log"
-    write_state
-    exit 1
+    fail_and_exit "driver" "cpu_size could not be determined from inputs" 1 "inspect_driver_log"
   fi
 
   if ! command -v mpirun >/dev/null 2>&1; then
     echo "Required command not found: mpirun" >&2
-    current_stage="driver"
-    record_failure "required command not found: mpirun" 1
-    driver_status="failed"
-    top_level_status="failed"
-    next_step="inspect_driver_log"
-    write_state
-    exit 1
+    fail_and_exit "driver" "required command not found: mpirun" 1 "inspect_driver_log"
   fi
 
   if [[ "$driver_case_type" == "traction" ]]; then
@@ -551,13 +487,7 @@ validate_driver_inputs() {
     driver_reason="recorded preprocess case type is traction, so use the non-displacement driver"
     if [[ ! -x "$driver_executable" ]]; then
       echo "Required driver executable not found: $driver_executable" >&2
-      current_stage="driver"
-      record_failure "required driver executable not found: mixed_ga_driver" 1
-      driver_status="failed"
-      top_level_status="failed"
-      next_step="inspect_driver_log"
-      write_state
-      exit 1
+      fail_and_exit "driver" "required driver executable not found: mixed_ga_driver" 1 "inspect_driver_log"
     fi
   else
     if [[ -x "${build_dir}/mixed_ga_driver_displacement" ]]; then
@@ -569,13 +499,7 @@ validate_driver_inputs() {
 
     if [[ "${#displacement_candidates[@]}" -ne 1 ]]; then
       echo "Displacement driver could not be determined safely from documented workflow." >&2
-      current_stage="driver"
-      record_failure "displacement driver could not be determined safely from documented workflow" 1
-      driver_status="failed"
-      top_level_status="failed"
-      next_step="inspect_driver_log"
-      write_state
-      exit 1
+      fail_and_exit "driver" "displacement driver could not be determined safely from documented workflow" 1 "inspect_driver_log"
     fi
 
     driver_executable="${displacement_candidates[0]}"
@@ -611,8 +535,7 @@ run_driver_stage() {
     failure_json="null"
   else
     driver_exit_code=$?
-    driver_status="failed"
-    top_level_status="failed"
+    set_stage_failed "driver"
     next_step="inspect_driver_log"
     current_stage="driver"
     record_failure "driver stage failed" "$driver_exit_code"
@@ -630,13 +553,7 @@ validate_postprocess_inputs() {
 
   if [[ ! -f "$state_file" ]]; then
     echo "State file not found for postprocess stage: $state_file" >&2
-    current_stage="postprocess"
-    record_failure "state file not found for postprocess stage" 1
-    postprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_postprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "postprocess" "state file not found for postprocess stage" 1 "inspect_postprocess_log"
   fi
 
   recorded_driver_status="$(extract_state_string "driver" "status")"
@@ -644,24 +561,12 @@ validate_postprocess_inputs() {
 
   if [[ "$recorded_driver_status" != "completed" ]]; then
     echo "Driver stage is not recorded as completed in state." >&2
-    current_stage="postprocess"
-    record_failure "driver stage is not recorded as completed in state" 1
-    postprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_postprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "postprocess" "driver stage is not recorded as completed in state" 1 "inspect_postprocess_log"
   fi
 
   if [[ ! -f "$driver_file" ]]; then
     echo "Required driver file not found for postprocess: $driver_file" >&2
-    current_stage="postprocess"
-    record_failure "required driver file not found for postprocess" 1
-    postprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_postprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "postprocess" "required driver file not found for postprocess" 1 "inspect_postprocess_log"
   fi
 
   postprocess_cpu_size="$recorded_driver_cpu_size"
@@ -673,13 +578,7 @@ validate_postprocess_inputs() {
   fi
   if [[ -z "$postprocess_cpu_size" || "$postprocess_cpu_size" == "unknown" ]]; then
     echo "Postprocess cpu_size could not be determined safely." >&2
-    current_stage="postprocess"
-    record_failure "postprocess cpu_size could not be determined safely" 1
-    postprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_postprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "postprocess" "postprocess cpu_size could not be determined safely" 1 "inspect_postprocess_log"
   fi
 
   initial_time="$(extract_yaml_scalar "$driver_file" "initial_time")"
@@ -687,57 +586,27 @@ validate_postprocess_inputs() {
   final_time="$(extract_yaml_scalar "$driver_file" "final_time")"
   if [[ -z "$initial_time" || -z "$initial_step" || -z "$final_time" ]]; then
     echo "Driver time settings are missing in: $driver_file" >&2
-    current_stage="postprocess"
-    record_failure "driver time settings are missing" 1
-    postprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_postprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "postprocess" "driver time settings are missing" 1 "inspect_postprocess_log"
   fi
 
   if ! postprocess_time_end="$(compute_time_end "$initial_time" "$initial_step" "$final_time")"; then
     echo "time_end could not be determined safely from driver settings." >&2
-    current_stage="postprocess"
-    record_failure "time_end could not be determined safely from driver settings" 1
-    postprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_postprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "postprocess" "time_end could not be determined safely from driver settings" 1 "inspect_postprocess_log"
   fi
 
   if ! command -v mpirun >/dev/null 2>&1; then
     echo "Required command not found: mpirun" >&2
-    current_stage="postprocess"
-    record_failure "required command not found: mpirun" 1
-    postprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_postprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "postprocess" "required command not found: mpirun" 1 "inspect_postprocess_log"
   fi
 
   if [[ ! -x "${build_dir}/reanalysis_proj_driver" ]]; then
     echo "Required postprocess executable not found: ${build_dir}/reanalysis_proj_driver" >&2
-    current_stage="postprocess"
-    record_failure "required postprocess executable not found: reanalysis_proj_driver" 1
-    postprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_postprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "postprocess" "required postprocess executable not found: reanalysis_proj_driver" 1 "inspect_postprocess_log"
   fi
 
   if [[ ! -x "${build_dir}/prepostproc" ]]; then
     echo "Required postprocess executable not found: ${build_dir}/prepostproc" >&2
-    current_stage="postprocess"
-    record_failure "required postprocess executable not found: prepostproc" 1
-    postprocess_status="failed"
-    top_level_status="failed"
-    next_step="inspect_postprocess_log"
-    write_state
-    exit 1
+    fail_and_exit "postprocess" "required postprocess executable not found: prepostproc" 1 "inspect_postprocess_log"
   fi
 
   postprocess_reason="using the common documented standard order shared by the references: reanalysis_proj_driver then prepostproc"
@@ -768,9 +637,8 @@ run_postprocess_stage() {
   ) >>"$postprocess_log" 2>&1 || command_exit_code=$?
   postprocess_exit_codes+=( "$command_exit_code" )
   if [[ "$command_exit_code" -ne 0 ]]; then
-    postprocess_exit_codes_json="[${postprocess_exit_codes[0]}]"
-    postprocess_status="failed"
-    top_level_status="failed"
+    postprocess_exit_codes_json="$(json_array_from_values "${postprocess_exit_codes[@]}")"
+    set_stage_failed "postprocess"
     next_step="inspect_postprocess_log"
     current_stage="postprocess"
     record_failure "postprocess stage failed during reanalysis_proj_driver" "$command_exit_code"
@@ -785,9 +653,8 @@ run_postprocess_stage() {
   ) >>"$postprocess_log" 2>&1 || command_exit_code=$?
   postprocess_exit_codes+=( "$command_exit_code" )
   if [[ "$command_exit_code" -ne 0 ]]; then
-    postprocess_exit_codes_json="[${postprocess_exit_codes[0]}, ${postprocess_exit_codes[1]}]"
-    postprocess_status="failed"
-    top_level_status="failed"
+    postprocess_exit_codes_json="$(json_array_from_values "${postprocess_exit_codes[@]}")"
+    set_stage_failed "postprocess"
     next_step="inspect_postprocess_log"
     current_stage="postprocess"
     record_failure "postprocess stage failed during prepostproc" "$command_exit_code"
@@ -795,7 +662,7 @@ run_postprocess_stage() {
     return 1
   fi
 
-  postprocess_exit_codes_json="[${postprocess_exit_codes[0]}, ${postprocess_exit_codes[1]}]"
+  postprocess_exit_codes_json="$(json_array_from_values "${postprocess_exit_codes[@]}")"
   postprocess_status="completed"
   top_level_status="ready"
   next_step="workflow_completed"
@@ -927,32 +794,17 @@ fi
 
 if [[ ! -f "$config_file" ]]; then
   echo "Required config file not found: $config_file" >&2
-  record_failure "required config file not found" 1
-  build_status="failed"
-  top_level_status="failed"
-  next_step="inspect_build_log"
-  write_state
-  exit 1
+  fail_and_exit "build" "required config file not found" 1 "inspect_build_log"
 fi
 
 if [[ ! -d "$example_dir" ]]; then
   echo "Example directory not found: $example_dir" >&2
-  record_failure "example directory not found" 1
-  build_status="failed"
-  top_level_status="failed"
-  next_step="inspect_build_log"
-  write_state
-  exit 1
+  fail_and_exit "build" "example directory not found" 1 "inspect_build_log"
 fi
 
 if [[ ! -d "$input_dir" ]]; then
   echo "Input directory not found: $input_dir" >&2
-  record_failure "input directory not found" 1
-  build_status="failed"
-  top_level_status="failed"
-  next_step="inspect_build_log"
-  write_state
-  exit 1
+  fail_and_exit "build" "input directory not found" 1 "inspect_build_log"
 fi
 
 validate_prerequisites

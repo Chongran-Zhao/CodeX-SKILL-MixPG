@@ -97,6 +97,7 @@ Explicitly deferred:
 - the executor may invoke only the common documented postprocess order shared by the references
 - the executor must fail if `time_end` cannot be derived safely from `paras_driver.yml`
 - the state file should describe what happened, not invent results for unimplemented stages
+- the current executor is intentionally still a single script, but stage-local helpers should keep shared failure and logging behavior consistent until a later retry/resume refactor
 
 ## Minimal Usage
 
@@ -142,3 +143,4 @@ end of the implemented workflow.
 - optional or conditional downstream tools such as `post_surface_force` and `vis_3d_mixed` are not auto-run in this step
 - for postprocess, the state file records the chosen sequence, `cpu_size`, derived `time_end`, log file, and exit codes
 - on failure, the state file records the exit code and log file path under `failure`
+- the current script is already fairly long, so maintenance should prefer small shared helpers and stage-local functions instead of adding more inline branching
