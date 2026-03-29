@@ -936,7 +936,8 @@ write_state() {
   "status": "$top_level_status",
   "requested": {
     "clean_build": $(json_bool "$clean_build"),
-    "start_from": "$resume_requested_start_from"
+    "start_from": "$resume_requested_start_from",
+    "retry_stage": "$retry_requested_stage"
   },
   "resume": {
     "requested": $(json_bool "$resume_requested"),

@@ -5,7 +5,8 @@
   "status": "ready",
   "requested": {
     "clean_build": false,
-    "start_from": "postprocess"
+    "start_from": "postprocess",
+    "retry_stage": ""
   },
   "resume": {
     "requested": true,

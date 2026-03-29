@@ -51,7 +51,7 @@ Minimal required sections:
 
 - top-level metadata: `version`, `workflow`, `current_stage`, `status`
 - resolved `paths`
-- requested options such as `clean_build`
+- requested options such as `clean_build`, `start_from`, and `retry_stage`
 - `stages` object with one entry per workflow stage
 - `failure` object or `null`
 - `next_step` hint for the next automation layer
@@ -172,6 +172,7 @@ Rejected paths:
 - any ambiguous or unsupported `--start-from` value
 
 The executor records both the resume intent and the effective decision in the state file under `resume`.
+The original user request is also preserved under `requested.start_from`.
 
 ## Retry Contract
 
@@ -208,4 +209,5 @@ Rejected retry cases:
 - any retry for build failures that are not the blocked-existing-directory case
 
 Retry intent, policy, and decision are recorded under `retry` in the state
-file, while per-stage attempt counters are stored with each stage record.
+file, while the original retry request is preserved under `requested.retry_stage`
+and per-stage attempt counters are stored with each stage record.
