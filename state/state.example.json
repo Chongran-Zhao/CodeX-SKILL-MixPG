@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "workflow": "mixpg-build-stage",
-  "current_stage": "build",
+  "workflow": "mixpg-build-preprocess",
+  "current_stage": "preprocess",
   "status": "ready",
   "requested": {
     "clean_build": false
@@ -28,7 +28,22 @@
       "exit_code": 0
     },
     "preprocess": {
-      "status": "not_started"
+      "status": "completed",
+      "case_type": "traction",
+      "reason": "runtime EBC has entries and init YAML has no displacement-specific Dirichlet entries",
+      "runtime_yaml": "/Users/example/build_MixPG/paras_preprocessor.yml",
+      "runtime_yaml_present": true,
+      "init_yaml": "/Users/example/build_MixPG/paras_preprocessor_init.yml",
+      "init_yaml_present": true,
+      "geo_file_base": "patch",
+      "geo_file_base_resolved": "/Users/example/build_MixPG/patch",
+      "commands": [
+        "./preprocess3d"
+      ],
+      "log_file": "/Users/example/CodeX-SKILL-MixPG/state/logs/preprocess-stage.log",
+      "exit_codes": [
+        0
+      ]
     },
     "driver": {
       "status": "not_started"
@@ -38,5 +53,5 @@
     }
   },
   "failure": null,
-  "next_step": "preprocess_not_implemented"
+  "next_step": "driver_not_implemented"
 }

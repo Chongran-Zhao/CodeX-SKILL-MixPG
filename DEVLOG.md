@@ -6,3 +6,4 @@
 - 2026-03-29：精炼自动化骨架，补充 guardrail 与阶段化状态结构，为后续 build、preprocess、driver、postprocess 和失败上报预留稳定接口。
 - 2026-03-29：在骨架上新增 build stage 支持，复用现有 build 准备脚本并把日志、退出码和结果写入状态文件。
 - 2026-03-29：补充 build command 到状态文件，方便后续排障和 planner/executor 之间的可追踪交接。
+- 2026-03-29：在 build 骨架上新增 preprocess stage，按 YAML 规则保守识别 traction/displacement，并记录命令、日志、退出码和判定原因。

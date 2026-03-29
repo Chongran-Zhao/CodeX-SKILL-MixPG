@@ -3,8 +3,8 @@
 ## Scope
 
 This document defines the minimal automation skeleton for MixPG case setup.
-At this stage, automation supports the build stage only and explicitly does not
-run preprocess, solver, or postprocess commands.
+At this stage, automation supports the build and preprocess stages only and
+explicitly does not run driver or postprocess commands.
 
 The goal of this skeleton is to make later stages easy to add without mixing
 planning, filesystem preparation, and execution responsibilities.
@@ -22,7 +22,10 @@ planning, filesystem preparation, and execution responsibilities.
 
 - verify required paths exist before doing any file operations
 - call the repository build preparation flow through `scripts/prepare_visco_build.sh`
+- determine preprocess case type conservatively from the documented YAML rules
+- run `./preprocess3d` or `./preprocess3d` then `./preprocess3d_init` as required
 - record build-stage logs and results in the machine-readable state file
+- record preprocess-stage logs and results in the machine-readable state file
 - stop immediately on validation or filesystem errors
 
 ### State Tracking
@@ -63,11 +66,13 @@ Implemented now:
 - path validation
 - build-stage execution through the repository build preparation script
 - build log capture
+- preprocess input validation
+- conservative case detection from `EBC` and `paras_preprocessor_init.yml`
+- preprocess command execution and log capture
 - state file writing
 
 Explicitly deferred:
 
-- preprocess executables
 - driver execution
 - postprocess execution
 - retry or resume orchestration
@@ -78,7 +83,9 @@ Explicitly deferred:
 - the planner must not perform filesystem changes
 - the executor must not infer permission for destructive cleanup; `--clean` stays opt-in
 - the executor may invoke only the repository build preparation flow for this stage
-- the executor must not invoke preprocessors, drivers, or postprocess tools
+- the executor may invoke only documented preprocess commands after successful build
+- the executor must fail if case type cannot be determined safely from current YAML files
+- the executor must not invoke drivers or postprocess tools
 - the state file should describe what happened, not invent results for unimplemented stages
 
 ## Minimal Usage
@@ -98,13 +105,18 @@ Optional safe cleanup:
 scripts/mixpg_executor.sh --clean
 ```
 
-The current script is only a safe preparation step. A successful run means the
-build stage completed and the workspace is ready for preprocess in a later step.
+The current script now runs build and preprocess only. A successful run means
+the case reached the end of preprocess and is ready for a later driver step.
 
 ## Usage Notes
 
 - the executor writes a build log next to the state file under `logs/build-stage.log`
+- the executor writes a preprocess log next to the state file under `logs/preprocess-stage.log`
 - if the build directory already exists, the run fails unless `--clean` is provided
 - on success, the state file marks `build.status` as `completed`
+- case detection is conservative:
+  traction requires non-empty `EBC` and no init-YAML displacement entry
+  displacement requires empty `EBC` and exactly one non-empty init-YAML `Dirichlet_velo_*` block
 - the state file also records the build script path, executed command, log file, and exit code
+- for preprocess, the state file records case type, detection reason, commands, log file, resolved `geo_file_base`, and exit codes
 - on failure, the state file records the exit code and log file path under `failure`
