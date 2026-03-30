@@ -64,7 +64,31 @@
       "init_yaml": "/Users/example/build_MixPG/paras_preprocessor_init.yml",
       "init_yaml_present": true,
       "geo_file_base": "patch",
+      "geo_file_base_mode": "relative",
       "geo_file_base_resolved": "/Users/example/build_MixPG/patch",
+      "geo_guardrail": "passed",
+      "geo_guardrail_reason": "relative geo_file_base is resolved under the build directory and checked before preprocessing",
+      "cleanup_status": "completed",
+      "cleanup_reason": "remove only known generated preprocess and partition artifacts before regenerating them",
+      "cleanup_patterns": [
+        "patch*.yml",
+        "epart.h5",
+        "npart.h5",
+        "node_mapping.h5",
+        "node_mapping_p.h5",
+        "node_mapping_v.h5",
+        "part_p*.h5",
+        "epart_init.h5",
+        "npart_init.h5",
+        "part_init_p*.h5"
+      ],
+      "cleanup_removed": [
+        "/Users/example/build_MixPG/patch0.yml",
+        "/Users/example/build_MixPG/epart.h5",
+        "/Users/example/build_MixPG/npart.h5",
+        "/Users/example/build_MixPG/part_p00000.h5",
+        "/Users/example/build_MixPG/part_p00001.h5"
+      ],
       "commands": [
         "./preprocess3d"
       ],

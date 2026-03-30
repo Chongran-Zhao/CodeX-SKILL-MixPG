@@ -91,6 +91,7 @@ Explicitly deferred:
 - the executor may invoke only the repository build preparation flow for this stage
 - the executor may invoke only documented preprocess commands after successful build
 - the executor must fail if case type cannot be determined safely from current YAML files
+- the executor must reject absolute `geo_file_base` values when they are unsafe under the documented HOME-prefix preprocess behavior
 - the executor must fail if driver selection is ambiguous under current documentation
 - the executor may invoke only the documented driver command after successful preprocess
 - the executor may invoke only the common documented postprocess order shared by the references
@@ -145,6 +146,7 @@ end of the implemented workflow.
   displacement requires empty `EBC` and exactly one non-empty init-YAML `Dirichlet_velo_*` block
 - the state file also records the build script path, executed command, log file, and exit code
 - for preprocess, the state file records case type, detection reason, commands, log file, resolved `geo_file_base`, and exit codes
+- before preprocess, the executor removes only known generated preprocess and partition artifacts so they are regenerated consistently
 - driver selection uses the already recorded `preprocess.case_type` from state instead of re-detecting case type
 - traction uses `./mixed_ga_driver`
 - displacement is only accepted when exactly one documented executable is present: `./mixed_ga_driver_displacement` or `./mixed_ga_driver_disp`
@@ -156,6 +158,33 @@ end of the implemented workflow.
 - for postprocess, the state file records the chosen sequence, `cpu_size`, derived `time_end`, explicit MPI launcher choice, linked MPI installation, log file, and exit codes
 - on failure, the state file records the exit code and log file path under `failure`
 - the current script is already fairly long, so maintenance should prefer small shared helpers and stage-local functions instead of adding more inline branching
+
+## Preprocess Guardrails
+
+- `geo_file_base` is treated conservatively because the documented preprocessor behavior may prepend `HOME`
+- relative `geo_file_base` values are resolved under the build directory and must satisfy `geo_file_base + "0.yml"`
+- absolute `geo_file_base` values are rejected with a clear failure instead of proceeding unsafely
+
+## Targeted Preprocess Cleanup
+
+Before preprocess, the executor removes only known generated files that are safe
+to regenerate:
+
+- `patch*.yml`
+- `epart.h5`
+- `npart.h5`
+- `node_mapping.h5`
+- `node_mapping_p.h5`
+- `node_mapping_v.h5`
+- `part_p*.h5`
+- `epart_init.h5`
+- `npart_init.h5`
+- `part_init_p*.h5`
+
+These files are cleaned because they are generated preprocess or partition
+artifacts. The executor does not remove source files, YAML inputs, compiled
+executables, solver outputs, or the whole build directory unless `--clean` is
+explicitly requested for the build stage.
 
 ## Resume Contract
 

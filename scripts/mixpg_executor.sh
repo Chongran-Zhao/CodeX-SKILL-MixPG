@@ -37,8 +37,15 @@ preprocess_command_display="[]"
 preprocess_exit_codes_json="[]"
 preprocess_geo_file_base=""
 preprocess_geo_file_resolved=""
+preprocess_geo_file_mode="unknown"
+preprocess_geo_guardrail="pending"
+preprocess_geo_guardrail_reason="not_checked"
 preprocess_runtime_yaml_present="false"
 preprocess_init_yaml_present="false"
+preprocess_cleanup_status="not_run"
+preprocess_cleanup_reason="not_needed"
+preprocess_cleanup_patterns_json="[]"
+preprocess_cleanup_removed_json="[]"
 preprocess_attempt_count="0"
 preprocess_max_attempts="1"
 driver_status="not_started"
@@ -114,6 +121,8 @@ Guardrails:
   - later-stage resume is allowed only when recorded state and basic artifact checks agree
   - retry is stage-level, bounded, and only enabled where the policy explicitly allows it
   - MPI launcher selection must not rely on PATH-first mpirun/mpiexec resolution
+  - unsafe absolute geo_file_base values are rejected when they conflict with the documented HOME-prefix behavior
+  - preprocess cleanup removes only known generated preprocess and partition artifacts
 EOF
 }
 
@@ -287,9 +296,16 @@ load_state_for_resume() {
   preprocess_reason="$(extract_state_string "preprocess" "reason")"
   preprocess_geo_file_base="$(extract_state_string "preprocess" "geo_file_base")"
   preprocess_geo_file_resolved="$(extract_state_string "preprocess" "geo_file_base_resolved")"
+  preprocess_geo_file_mode="$(extract_state_string "preprocess" "geo_file_base_mode")"
+  preprocess_geo_guardrail="$(extract_state_string "preprocess" "geo_guardrail")"
+  preprocess_geo_guardrail_reason="$(extract_state_string "preprocess" "geo_guardrail_reason")"
   preprocess_command_display="$(extract_state_raw "preprocess" "commands")"
   preprocess_log="$(extract_state_string "preprocess" "log_file")"
   preprocess_exit_codes_json="$(extract_state_raw "preprocess" "exit_codes")"
+  preprocess_cleanup_status="$(extract_state_string "preprocess" "cleanup_status")"
+  preprocess_cleanup_reason="$(extract_state_string "preprocess" "cleanup_reason")"
+  preprocess_cleanup_patterns_json="$(extract_state_raw "preprocess" "cleanup_patterns")"
+  preprocess_cleanup_removed_json="$(extract_state_raw "preprocess" "cleanup_removed")"
   preprocess_attempt_count="$(extract_state_raw "preprocess" "attempts")"
   if [[ -z "$preprocess_attempt_count" ]]; then
     preprocess_attempt_count="0"
@@ -643,12 +659,62 @@ resolve_geo_file_base() {
   preprocess_geo_file_base="$raw_value"
 
   if [[ "$raw_value" == /* ]]; then
+    preprocess_geo_file_mode="absolute"
+    preprocess_geo_guardrail="failed"
+    preprocess_geo_guardrail_reason="absolute geo_file_base is rejected because the documented preprocessor behavior may prepend HOME and produce an unsafe broken path"
     preprocess_geo_file_resolved="$raw_value"
-  else
-    preprocess_geo_file_resolved="${build_dir}/${raw_value}"
+    return 1
   fi
 
+  preprocess_geo_file_mode="relative"
+  preprocess_geo_guardrail="passed"
+  preprocess_geo_guardrail_reason="relative geo_file_base is resolved under the build directory and checked before preprocessing"
+  preprocess_geo_file_resolved="${build_dir}/${raw_value}"
+
   [[ -f "${preprocess_geo_file_resolved}0.yml" ]]
+}
+
+cleanup_preprocess_generated_artifacts() {
+  local -a cleanup_patterns=(
+    "patch*.yml"
+    "epart.h5"
+    "npart.h5"
+    "node_mapping.h5"
+    "node_mapping_p.h5"
+    "node_mapping_v.h5"
+    "part_p*.h5"
+    "epart_init.h5"
+    "npart_init.h5"
+    "part_init_p*.h5"
+  )
+  local -a removed_files=()
+  local pattern=""
+  local candidate=""
+
+  preprocess_cleanup_patterns_json='["patch*.yml", "epart.h5", "npart.h5", "node_mapping.h5", "node_mapping_p.h5", "node_mapping_v.h5", "part_p*.h5", "epart_init.h5", "npart_init.h5", "part_init_p*.h5"]'
+  preprocess_cleanup_reason="remove only known generated preprocess and partition artifacts before regenerating them"
+  preprocess_cleanup_status="completed"
+
+  for pattern in "${cleanup_patterns[@]}"; do
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] || continue
+      rm -f "$candidate"
+      removed_files+=( "$candidate" )
+    done < <(find "$build_dir" -maxdepth 1 -type f -name "$pattern" -print)
+  done
+
+  if [[ "${#removed_files[@]}" -eq 0 ]]; then
+    preprocess_cleanup_status="no_matches"
+    preprocess_cleanup_reason="no known generated preprocess or partition artifacts were present before preprocessing"
+    preprocess_cleanup_removed_json="[]"
+    return 0
+  fi
+
+  preprocess_cleanup_removed_json="["
+  for candidate in "${removed_files[@]}"; do
+    preprocess_cleanup_removed_json="${preprocess_cleanup_removed_json}\"${candidate}\", "
+  done
+  preprocess_cleanup_removed_json="${preprocess_cleanup_removed_json%, }]"
 }
 
 detect_preprocess_case_type() {
@@ -699,6 +765,10 @@ validate_preprocess_inputs() {
   preprocess_runtime_yaml_present="true"
 
   if ! resolve_geo_file_base; then
+    if [[ "$preprocess_geo_guardrail" == "failed" ]]; then
+      echo "Unsafe absolute geo_file_base detected in: $preprocessor_file" >&2
+      fail_and_exit "preprocess" "unsafe absolute geo_file_base conflicts with documented HOME-prefix behavior" 1 "inspect_preprocess_log"
+    fi
     echo "Invalid or unresolved geo_file_base in: $preprocessor_file" >&2
     fail_and_exit "preprocess" "invalid or unresolved geo_file_base" 1 "inspect_preprocess_log"
   fi
@@ -736,8 +806,19 @@ run_preprocess_stage() {
     printf '[mixpg] preprocess runtime yaml: %s\n' "$preprocessor_file"
     printf '[mixpg] preprocess init yaml present: %s\n' "$preprocess_init_yaml_present"
     printf '[mixpg] geo_file_base: %s\n' "$preprocess_geo_file_base"
+    printf '[mixpg] geo_file_base mode: %s\n' "$preprocess_geo_file_mode"
+    printf '[mixpg] geo guardrail: %s\n' "$preprocess_geo_guardrail"
+    printf '[mixpg] geo guardrail reason: %s\n' "$preprocess_geo_guardrail_reason"
     printf '[mixpg] geo_file_base resolved: %s\n' "$preprocess_geo_file_resolved"
   } >"$preprocess_log"
+
+  cleanup_preprocess_generated_artifacts
+  {
+    printf '[mixpg] preprocess cleanup status: %s\n' "$preprocess_cleanup_status"
+    printf '[mixpg] preprocess cleanup reason: %s\n' "$preprocess_cleanup_reason"
+    printf '[mixpg] preprocess cleanup patterns: %s\n' "$preprocess_cleanup_patterns_json"
+    printf '[mixpg] preprocess cleanup removed: %s\n' "$preprocess_cleanup_removed_json"
+  } >>"$preprocess_log"
 
   preprocess_commands=( "./preprocess3d" )
   if [[ "$preprocess_case_type" == "displacement" ]]; then
@@ -1080,7 +1161,14 @@ write_state() {
       "init_yaml": "$preprocessor_init_file",
       "init_yaml_present": $(json_bool "$preprocess_init_yaml_present"),
       "geo_file_base": "$preprocess_geo_file_base",
+      "geo_file_base_mode": "$preprocess_geo_file_mode",
       "geo_file_base_resolved": "$preprocess_geo_file_resolved",
+      "geo_guardrail": "$preprocess_geo_guardrail",
+      "geo_guardrail_reason": "$preprocess_geo_guardrail_reason",
+      "cleanup_status": "$preprocess_cleanup_status",
+      "cleanup_reason": "$preprocess_cleanup_reason",
+      "cleanup_patterns": $preprocess_cleanup_patterns_json,
+      "cleanup_removed": $preprocess_cleanup_removed_json,
       "commands": $preprocess_command_display,
       "log_file": "$preprocess_log",
       "exit_codes": $preprocess_exit_codes_json,
