@@ -51,7 +51,7 @@ Minimal required sections:
 
 - top-level metadata: `version`, `workflow`, `current_stage`, `status`
 - resolved `paths`
-- requested options such as `clean_build`, `start_from`, and `retry_stage`
+- requested options such as `clean_build`, `start_from`, `retry_stage`, and `mpi_launcher`
 - `stages` object with one entry per workflow stage
 - `failure` object or `null`
 - `next_step` hint for the next automation layer
@@ -99,6 +99,9 @@ Explicitly deferred:
 - later-stage resume must be rejected unless recorded state and basic artifacts establish a complete dependency chain
 - retry must remain explicit, bounded, and stage-level
 - retry must reuse the existing rerun/resume path instead of inventing a separate execution flow
+- MPI launcher selection must not rely on whichever `mpirun` or `mpiexec` appears first in `PATH`
+- driver and MPI-using postprocess stages must use either an explicitly configured launcher or a launcher derived from the executable's linked MPI installation
+- if the launcher path and linked MPI installation do not match, the workflow must fail clearly
 - the state file should describe what happened, not invent results for unimplemented stages
 - the current executor is intentionally still a single script, but stage-local helpers should keep shared failure and logging behavior consistent until a later retry/resume refactor
 
@@ -145,12 +148,12 @@ end of the implemented workflow.
 - driver selection uses the already recorded `preprocess.case_type` from state instead of re-detecting case type
 - traction uses `./mixed_ga_driver`
 - displacement is only accepted when exactly one documented executable is present: `./mixed_ga_driver_displacement` or `./mixed_ga_driver_disp`
-- for driver, the state file records the selected executable, `cpu_size`, command, log file, and exit code
+- for driver, the state file records the selected executable, `cpu_size`, explicit MPI launcher choice, linked MPI installation, command, log file, and exit code
 - postprocess uses the conservative shared sequence from the references:
   `mpirun -np <cpu_size> ./reanalysis_proj_driver -time_end <time_end>`
   then `./prepostproc`
 - optional or conditional downstream tools such as `post_surface_force` and `vis_3d_mixed` are not auto-run in this step
-- for postprocess, the state file records the chosen sequence, `cpu_size`, derived `time_end`, log file, and exit codes
+- for postprocess, the state file records the chosen sequence, `cpu_size`, derived `time_end`, explicit MPI launcher choice, linked MPI installation, log file, and exit codes
 - on failure, the state file records the exit code and log file path under `failure`
 - the current script is already fairly long, so maintenance should prefer small shared helpers and stage-local functions instead of adding more inline branching
 
@@ -211,3 +214,11 @@ Rejected retry cases:
 Retry intent, policy, and decision are recorded under `retry` in the state
 file, while the original retry request is preserved under `requested.retry_stage`
 and per-stage attempt counters are stored with each stage record.
+
+## MPI Launcher Rule
+
+The workflow now treats MPI launcher choice as an explicit safety decision.
+
+- If `--mpi-launcher PATH` is provided, that exact launcher is used only if it matches the MPI installation linked by the target executable.
+- If no launcher is configured, the workflow derives a launcher from the linked MPI installation prefix, for example `<linked-prefix>/bin/mpirun`.
+- The workflow must not proceed with a launcher from a different MPI prefix, even if that launcher is first in `PATH`.

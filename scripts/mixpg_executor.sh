@@ -7,6 +7,7 @@ state_file="state/state.json"
 clean_build="false"
 start_from="build"
 retry_stage=""
+mpi_launcher=""
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 build_script="${script_dir}/prepare_visco_build.sh"
@@ -48,6 +49,9 @@ driver_command_display=""
 driver_exit_code="null"
 driver_cpu_size="unknown"
 driver_file_present="false"
+driver_mpi_launcher=""
+driver_mpi_linked_prefix=""
+driver_mpi_linked_family="unknown"
 driver_attempt_count="0"
 driver_max_attempts="1"
 postprocess_status="not_started"
@@ -56,6 +60,9 @@ postprocess_cpu_size="unknown"
 postprocess_time_end="unknown"
 postprocess_command_display="[]"
 postprocess_exit_codes_json="[]"
+postprocess_mpi_launcher=""
+postprocess_mpi_linked_prefix=""
+postprocess_mpi_linked_family="unknown"
 postprocess_attempt_count="0"
 postprocess_max_attempts="1"
 top_level_status="pending"
@@ -79,7 +86,7 @@ retry_policy_mode="stage_level_conservative"
 usage() {
   cat <<'EOF'
 Usage:
-  mixpg_executor.sh [--repo-root DIR] [--build-dir DIR] [--state-file FILE] [--clean] [--start-from STAGE] [--retry-stage STAGE]
+  mixpg_executor.sh [--repo-root DIR] [--build-dir DIR] [--state-file FILE] [--clean] [--start-from STAGE] [--retry-stage STAGE] [--mpi-launcher PATH]
 
 Implemented stages:
   - build
@@ -97,6 +104,7 @@ Build/preprocess/driver/postprocess tasks only:
   - run the documented postprocess command sequence
   - support conservative explicit resume with --start-from
   - support conservative explicit retry with --retry-stage
+  - select an MPI launcher explicitly or derive it from executable linkage
   - write/update a state file
   - capture stage logs
 
@@ -105,6 +113,7 @@ Guardrails:
   - only removes build directory contents when --clean is explicitly provided
   - later-stage resume is allowed only when recorded state and basic artifact checks agree
   - retry is stage-level, bounded, and only enabled where the policy explicitly allows it
+  - MPI launcher selection must not rely on PATH-first mpirun/mpiexec resolution
 EOF
 }
 
@@ -492,6 +501,83 @@ extract_yaml_scalar() {
   ' "$source_file"
 }
 
+path_prefix_parent() {
+  local path="$1"
+  (
+    cd "$(dirname "$path")/.." >/dev/null 2>&1 && pwd -P
+  )
+}
+
+infer_mpi_family_from_text() {
+  local text="$1"
+  case "$text" in
+    *mpich*|*HYDRA*)
+      echo "mpich"
+      ;;
+    *openmpi*|*open-mpi*|*Open\ MPI*)
+      echo "openmpi"
+      ;;
+    *)
+      echo "unknown"
+      ;;
+  esac
+}
+
+detect_linked_mpi_prefix() {
+  local executable="$1"
+  local linked_line=""
+  linked_line="$(otool -L "$executable" 2>/dev/null | awk '/\/lib\/lib(mpich|mpi|pmpi|mpicxx)[^[:space:]]*/ { print $1; exit }')"
+  if [[ -z "$linked_line" ]]; then
+    return 1
+  fi
+  printf '%s\n' "${linked_line%/lib/*}"
+}
+
+select_mpi_launcher_for_executable() {
+  local executable="$1"
+  local stage="$2"
+  local linked_prefix=""
+  local linked_family="unknown"
+  local candidate=""
+  local launcher_prefix=""
+
+  if ! linked_prefix="$(detect_linked_mpi_prefix "$executable")"; then
+    fail_and_exit "$stage" "could not determine linked MPI installation from executable" 1 "inspect_${stage}_log"
+  fi
+
+  linked_family="$(infer_mpi_family_from_text "$linked_prefix")"
+
+  if [[ -n "$mpi_launcher" ]]; then
+    if [[ ! -x "$mpi_launcher" ]]; then
+      fail_and_exit "$stage" "configured MPI launcher is not executable" 1 "inspect_${stage}_log"
+    fi
+    candidate="$mpi_launcher"
+  else
+    if [[ -x "${linked_prefix}/bin/mpirun" ]]; then
+      candidate="${linked_prefix}/bin/mpirun"
+    elif [[ -x "${linked_prefix}/bin/mpiexec" ]]; then
+      candidate="${linked_prefix}/bin/mpiexec"
+    else
+      fail_and_exit "$stage" "could not derive an MPI launcher from the linked MPI installation" 1 "inspect_${stage}_log"
+    fi
+  fi
+
+  launcher_prefix="$(path_prefix_parent "$candidate")"
+  if [[ "$launcher_prefix" != "$linked_prefix" ]]; then
+    fail_and_exit "$stage" "MPI launcher path does not match the MPI installation linked by the executable" 1 "inspect_${stage}_log"
+  fi
+
+  if [[ "$stage" == "driver" ]]; then
+    driver_mpi_launcher="$candidate"
+    driver_mpi_linked_prefix="$linked_prefix"
+    driver_mpi_linked_family="$linked_family"
+  else
+    postprocess_mpi_launcher="$candidate"
+    postprocess_mpi_linked_prefix="$linked_prefix"
+    postprocess_mpi_linked_family="$linked_family"
+  fi
+}
+
 compute_time_end() {
   local initial_time="$1"
   local initial_step="$2"
@@ -729,11 +815,6 @@ validate_driver_inputs() {
     fail_and_exit "driver" "cpu_size could not be determined from inputs" 1 "inspect_driver_log"
   fi
 
-  if ! command -v mpirun >/dev/null 2>&1; then
-    echo "Required command not found: mpirun" >&2
-    fail_and_exit "driver" "required command not found: mpirun" 1 "inspect_driver_log"
-  fi
-
   if [[ "$driver_case_type" == "traction" ]]; then
     driver_executable="${build_dir}/mixed_ga_driver"
     driver_reason="recorded preprocess case type is traction, so use the non-displacement driver"
@@ -757,6 +838,8 @@ validate_driver_inputs() {
     driver_executable="${displacement_candidates[0]}"
     driver_reason="recorded preprocess case type is displacement, and exactly one documented displacement driver executable is present"
   fi
+
+  select_mpi_launcher_for_executable "$driver_executable" "driver"
 }
 
 run_driver_stage() {
@@ -764,7 +847,7 @@ run_driver_stage() {
   current_stage="driver"
   top_level_status="running"
   next_step="driver_running"
-  driver_command_display="mpirun -np ${driver_cpu_size} ${driver_executable} | tee driver_log.txt"
+  driver_command_display="${driver_mpi_launcher} -np ${driver_cpu_size} ${driver_executable} | tee driver_log.txt"
   write_state
 
   {
@@ -773,12 +856,15 @@ run_driver_stage() {
     printf '[mixpg] driver file: %s\n' "$driver_file"
     printf '[mixpg] driver cpu_size: %s\n' "$driver_cpu_size"
     printf '[mixpg] driver executable: %s\n' "$driver_executable"
+    printf '[mixpg] driver linked MPI prefix: %s\n' "$driver_mpi_linked_prefix"
+    printf '[mixpg] driver linked MPI family: %s\n' "$driver_mpi_linked_family"
+    printf '[mixpg] driver MPI launcher: %s\n' "$driver_mpi_launcher"
     printf '[mixpg] driver command: %s\n' "$driver_command_display"
   } >"$driver_log"
 
   if (
     cd "$build_dir"
-    mpirun -np "$driver_cpu_size" "$driver_executable" | tee driver_log.txt
+    "$driver_mpi_launcher" -np "$driver_cpu_size" "$driver_executable" | tee driver_log.txt
   ) >>"$driver_log" 2>&1; then
     driver_status="completed"
     driver_exit_code=0
@@ -846,11 +932,6 @@ validate_postprocess_inputs() {
     fail_and_exit "postprocess" "time_end could not be determined safely from driver settings" 1 "inspect_postprocess_log"
   fi
 
-  if ! command -v mpirun >/dev/null 2>&1; then
-    echo "Required command not found: mpirun" >&2
-    fail_and_exit "postprocess" "required command not found: mpirun" 1 "inspect_postprocess_log"
-  fi
-
   if [[ ! -x "${build_dir}/reanalysis_proj_driver" ]]; then
     echo "Required postprocess executable not found: ${build_dir}/reanalysis_proj_driver" >&2
     fail_and_exit "postprocess" "required postprocess executable not found: reanalysis_proj_driver" 1 "inspect_postprocess_log"
@@ -861,8 +942,9 @@ validate_postprocess_inputs() {
     fail_and_exit "postprocess" "required postprocess executable not found: prepostproc" 1 "inspect_postprocess_log"
   fi
 
+  select_mpi_launcher_for_executable "${build_dir}/reanalysis_proj_driver" "postprocess"
   postprocess_reason="using the common documented standard order shared by the references: reanalysis_proj_driver then prepostproc"
-  postprocess_command_display="[\"mpirun -np ${postprocess_cpu_size} ./reanalysis_proj_driver -time_end ${postprocess_time_end}\", \"./prepostproc\"]"
+  postprocess_command_display="[\"${postprocess_mpi_launcher} -np ${postprocess_cpu_size} ./reanalysis_proj_driver -time_end ${postprocess_time_end}\", \"./prepostproc\"]"
 }
 
 run_postprocess_stage() {
@@ -879,13 +961,16 @@ run_postprocess_stage() {
     printf '[mixpg] postprocess reason: %s\n' "$postprocess_reason"
     printf '[mixpg] postprocess cpu_size: %s\n' "$postprocess_cpu_size"
     printf '[mixpg] postprocess time_end: %s\n' "$postprocess_time_end"
-    printf '[mixpg] postprocess command 1: mpirun -np %s ./reanalysis_proj_driver -time_end %s\n' "$postprocess_cpu_size" "$postprocess_time_end"
+    printf '[mixpg] postprocess linked MPI prefix: %s\n' "$postprocess_mpi_linked_prefix"
+    printf '[mixpg] postprocess linked MPI family: %s\n' "$postprocess_mpi_linked_family"
+    printf '[mixpg] postprocess MPI launcher: %s\n' "$postprocess_mpi_launcher"
+    printf '[mixpg] postprocess command 1: %s -np %s ./reanalysis_proj_driver -time_end %s\n' "$postprocess_mpi_launcher" "$postprocess_cpu_size" "$postprocess_time_end"
     printf '[mixpg] postprocess command 2: ./prepostproc\n'
   } >"$postprocess_log"
 
   (
     cd "$build_dir"
-    mpirun -np "$postprocess_cpu_size" ./reanalysis_proj_driver -time_end "$postprocess_time_end"
+    "$postprocess_mpi_launcher" -np "$postprocess_cpu_size" ./reanalysis_proj_driver -time_end "$postprocess_time_end"
   ) >>"$postprocess_log" 2>&1 || command_exit_code=$?
   postprocess_exit_codes+=( "$command_exit_code" )
   if [[ "$command_exit_code" -ne 0 ]]; then
@@ -937,7 +1022,8 @@ write_state() {
   "requested": {
     "clean_build": $(json_bool "$clean_build"),
     "start_from": "$resume_requested_start_from",
-    "retry_stage": "$retry_requested_stage"
+    "retry_stage": "$retry_requested_stage",
+    "mpi_launcher": "$mpi_launcher"
   },
   "resume": {
     "requested": $(json_bool "$resume_requested"),
@@ -1008,6 +1094,9 @@ write_state() {
       "driver_file": "$driver_file",
       "driver_file_present": $(json_bool "$driver_file_present"),
       "cpu_size": "$driver_cpu_size",
+      "mpi_launcher": "$driver_mpi_launcher",
+      "mpi_linked_prefix": "$driver_mpi_linked_prefix",
+      "mpi_linked_family": "$driver_mpi_linked_family",
       "executable": "$driver_executable",
       "command": "$driver_command_display",
       "log_file": "$driver_log",
@@ -1020,6 +1109,9 @@ write_state() {
       "reason": "$postprocess_reason",
       "cpu_size": "$postprocess_cpu_size",
       "time_end": "$postprocess_time_end",
+      "mpi_launcher": "$postprocess_mpi_launcher",
+      "mpi_linked_prefix": "$postprocess_mpi_linked_prefix",
+      "mpi_linked_family": "$postprocess_mpi_linked_family",
       "commands": $postprocess_command_display,
       "log_file": "$postprocess_log",
       "exit_codes": $postprocess_exit_codes_json,
@@ -1057,6 +1149,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --retry-stage)
       retry_stage="$2"
+      shift 2
+      ;;
+    --mpi-launcher)
+      mpi_launcher="$2"
       shift 2
       ;;
     --help|-h)

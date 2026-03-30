@@ -13,3 +13,4 @@
 - 2026-03-29：新增最小 resume/rerun 机制，通过 `--start-from` 做显式保守恢复，并把恢复意图与决策写入状态文件。
 - 2026-03-29：新增最小 stage-level retry policy，仅为 build 提供一次受限重试入口，并把策略、attempts 与决策写入状态文件。
 - 2026-03-29：补充原始请求字段到状态样式中，使 `requested`、`resume` 与 `retry` 三层记录更加一致和可追踪。
+- 2026-03-30：收紧 MPI launcher 选择规则，禁止隐式依赖 PATH 中的 mpirun，并在 launcher 与可执行文件链接的 MPI 安装不一致时明确失败。

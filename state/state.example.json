@@ -6,7 +6,8 @@
   "requested": {
     "clean_build": false,
     "start_from": "postprocess",
-    "retry_stage": ""
+    "retry_stage": "",
+    "mpi_launcher": "/Users/example/lib/mpich-4.1.2-shared/bin/mpirun"
   },
   "resume": {
     "requested": true,
@@ -81,8 +82,11 @@
       "driver_file": "/Users/example/build_MixPG/paras_driver.yml",
       "driver_file_present": true,
       "cpu_size": "6",
+      "mpi_launcher": "/Users/example/lib/mpich-4.1.2-shared/bin/mpirun",
+      "mpi_linked_prefix": "/Users/example/lib/mpich-4.1.2-shared",
+      "mpi_linked_family": "mpich",
       "executable": "/Users/example/build_MixPG/mixed_ga_driver",
-      "command": "mpirun -np 6 /Users/example/build_MixPG/mixed_ga_driver | tee driver_log.txt",
+      "command": "/Users/example/lib/mpich-4.1.2-shared/bin/mpirun -np 6 /Users/example/build_MixPG/mixed_ga_driver | tee driver_log.txt",
       "log_file": "/Users/example/CodeX-SKILL-MixPG/state/logs/driver-stage.log",
       "exit_code": 0,
       "attempts": 1,
@@ -93,8 +97,11 @@
       "reason": "using the common documented standard order shared by the references: reanalysis_proj_driver then prepostproc",
       "cpu_size": "6",
       "time_end": "100",
+      "mpi_launcher": "/Users/example/lib/mpich-4.1.2-shared/bin/mpirun",
+      "mpi_linked_prefix": "/Users/example/lib/mpich-4.1.2-shared",
+      "mpi_linked_family": "mpich",
       "commands": [
-        "mpirun -np 6 ./reanalysis_proj_driver -time_end 100",
+        "/Users/example/lib/mpich-4.1.2-shared/bin/mpirun -np 6 ./reanalysis_proj_driver -time_end 100",
         "./prepostproc"
       ],
       "log_file": "/Users/example/CodeX-SKILL-MixPG/state/logs/postprocess-stage.log",
