@@ -22,6 +22,7 @@ planning, filesystem preparation, and execution responsibilities.
 
 - verify required paths exist before doing any file operations
 - call the repository build preparation flow through `scripts/prepare_visco_build.sh`
+- configure CMake with the default build type `Release`
 - determine preprocess case type conservatively from the documented YAML rules
 - run `./preprocess3d` or `./preprocess3d` then `./preprocess3d_init` as required
 - read the recorded preprocess case type from state before selecting a driver
@@ -70,6 +71,7 @@ Implemented now:
 
 - path validation
 - build-stage execution through the repository build preparation script
+- default CMake configuration with `-DCMAKE_BUILD_TYPE=Release`
 - build log capture
 - preprocess input validation
 - conservative case detection from `EBC` and `paras_preprocessor_init.yml`
@@ -145,6 +147,7 @@ end of the implemented workflow.
   traction requires non-empty `EBC` and no init-YAML displacement entry
   displacement requires empty `EBC` and exactly one non-empty init-YAML `Dirichlet_velo_*` block
 - the state file also records the build script path, executed command, log file, and exit code
+- the build preparation flow configures the example with `cmake <example_dir> -DCMAKE_BUILD_TYPE=Release`
 - for preprocess, the state file records case type, detection reason, commands, log file, resolved `geo_file_base`, and exit codes
 - before preprocess, the executor removes only known generated preprocess and partition artifacts so they are regenerated consistently
 - driver selection uses the already recorded `preprocess.case_type` from state instead of re-detecting case type
