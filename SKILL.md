@@ -316,6 +316,7 @@ Rules:
 - use `prepostproc`, not the old `prepost` name
 - `-time_end` is a step index, not physical time
 - before running `vis_3d_mixed`, update `paras_pos_vis.yml` so `time_start`, `time_step`, and `time_end` match the finished run
+- if `paras_pos_vis.yml.time_end` exceeds the highest available `SOL_*.pvtu` index from the current run, treat visualization as not ready and fail clearly instead of attempting `vis_3d_mixed`
 
 ### Surface-force postprocess rule
 

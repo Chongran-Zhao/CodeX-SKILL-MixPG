@@ -121,6 +121,12 @@
       "reason": "using the common documented standard order shared by the references: reanalysis_proj_driver then prepostproc",
       "cpu_size": "6",
       "time_end": "100",
+      "visualization_yaml": "/Users/example/build_MixPG/paras_pos_vis.yml",
+      "visualization_yaml_present": true,
+      "visualization_time_end": "100",
+      "visualization_available_solution_max": "100",
+      "visualization_guardrail": "passed",
+      "visualization_guardrail_reason": "paras_pos_vis.yml time_end is within the actual available solution output range for this run",
       "downstream_dependency_guardrail": "passed",
       "downstream_dependency_guardrail_reason": "prepostproc produced postpart_p*.h5, so downstream tools would satisfy this dependency check if explicitly implemented later",
       "downstream_dependency_patterns": [

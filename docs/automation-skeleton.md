@@ -158,7 +158,7 @@ end of the implemented workflow.
   `mpirun -np <cpu_size> ./reanalysis_proj_driver -time_end <time_end>`
   then `./prepostproc`
 - optional or conditional downstream tools such as `post_surface_force` and `vis_3d_mixed` are not auto-run in this step
-- for postprocess, the state file records the chosen sequence, `cpu_size`, derived `time_end`, explicit MPI launcher choice, linked MPI installation, downstream dependency guardrail results, log file, and exit codes
+- for postprocess, the state file records the chosen sequence, `cpu_size`, derived `time_end`, explicit MPI launcher choice, linked MPI installation, downstream dependency guardrail results, downstream visualization readiness, log file, and exit codes
 - on failure, the state file records the exit code and log file path under `failure`
 - the current script is already fairly long, so maintenance should prefer small shared helpers and stage-local functions instead of adding more inline branching
 
@@ -201,6 +201,11 @@ The conservative dependency order is:
 `post_surface_force` and `vis_3d_mixed` depend on generated files such as
 `postpart_p*.h5`, which are produced by `prepostproc`.
 
+`vis_3d_mixed` also depends on `paras_pos_vis.yml.time_end` matching the actual
+available solution output range for the current run. If the visualization
+template still points past the last available `SOL_*.pvtu`, visualization is
+not considered ready.
+
 The current executor still implements only:
 
 1. `reanalysis_proj_driver`
@@ -211,6 +216,12 @@ But it now enforces a downstream guardrail after `prepostproc`: if
 downstream dependency chain is not ready. This prevents later tooling from
 treating downstream postprocess steps as safe to run before their dependency
 artifacts exist.
+
+The executor also performs a downstream visualization readiness check. If
+`paras_pos_vis.yml` exists, its configured `time_end` must not exceed the
+highest available `SOL_*.pvtu` index for the finished run. A mismatch is
+recorded as a downstream visualization readiness failure rather than as a
+scientific solver correction.
 
 ## Resume Contract
 

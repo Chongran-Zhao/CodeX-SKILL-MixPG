@@ -71,6 +71,12 @@ postprocess_dependency_guardrail="pending"
 postprocess_dependency_guardrail_reason="not_checked"
 postprocess_dependency_patterns_json='["postpart_p*.h5"]'
 postprocess_dependency_found_json="[]"
+postprocess_visualization_yaml="${build_dir}/paras_pos_vis.yml"
+postprocess_visualization_yaml_present="false"
+postprocess_visualization_time_end="unknown"
+postprocess_visualization_available_solution_max="unknown"
+postprocess_visualization_guardrail="not_checked"
+postprocess_visualization_guardrail_reason="visualization readiness not checked"
 postprocess_mpi_launcher=""
 postprocess_mpi_linked_prefix=""
 postprocess_mpi_linked_family="unknown"
@@ -347,6 +353,11 @@ load_state_for_resume() {
   postprocess_dependency_guardrail="$(extract_state_string "postprocess" "downstream_dependency_guardrail")"
   postprocess_dependency_guardrail_reason="$(extract_state_string "postprocess" "downstream_dependency_guardrail_reason")"
   postprocess_dependency_found_json="$(extract_state_raw "postprocess" "downstream_dependency_found")"
+  postprocess_visualization_yaml_present="$(extract_state_raw "postprocess" "visualization_yaml_present")"
+  postprocess_visualization_time_end="$(extract_state_string "postprocess" "visualization_time_end")"
+  postprocess_visualization_available_solution_max="$(extract_state_string "postprocess" "visualization_available_solution_max")"
+  postprocess_visualization_guardrail="$(extract_state_string "postprocess" "visualization_guardrail")"
+  postprocess_visualization_guardrail_reason="$(extract_state_string "postprocess" "visualization_guardrail_reason")"
   postprocess_attempt_count="$(extract_state_raw "postprocess" "attempts")"
   if [[ -z "$postprocess_attempt_count" ]]; then
     postprocess_attempt_count="0"
@@ -616,6 +627,21 @@ compute_time_end() {
   '
 }
 
+detect_max_solution_output_index() {
+  local candidate=""
+  local max_index=""
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    candidate="${candidate##*/}"
+    candidate="${candidate#SOL_}"
+    candidate="${candidate%.pvtu}"
+    max_index="$candidate"
+  done < <(find "$build_dir" -maxdepth 1 -type f -name 'SOL_*.pvtu' | sort)
+
+  [[ -n "$max_index" ]] || return 1
+  printf '%s\n' "$((10#$max_index))"
+}
+
 verify_postprocess_downstream_dependencies() {
   local -a found_files=()
   local candidate=""
@@ -639,6 +665,50 @@ verify_postprocess_downstream_dependencies() {
     postprocess_dependency_found_json="${postprocess_dependency_found_json}\"${candidate}\", "
   done
   postprocess_dependency_found_json="${postprocess_dependency_found_json%, }]"
+}
+
+verify_visualization_readiness() {
+  local configured_time_end=""
+  local available_max=""
+
+  if [[ ! -f "$postprocess_visualization_yaml" ]]; then
+    postprocess_visualization_yaml_present="false"
+    postprocess_visualization_guardrail="not_configured"
+    postprocess_visualization_guardrail_reason="paras_pos_vis.yml is not present, so downstream vis_3d_mixed readiness is not evaluated"
+    postprocess_visualization_time_end="unknown"
+    postprocess_visualization_available_solution_max="unknown"
+    return 0
+  fi
+
+  postprocess_visualization_yaml_present="true"
+  configured_time_end="$(extract_yaml_scalar "$postprocess_visualization_yaml" "time_end")"
+  if [[ -z "$configured_time_end" ]]; then
+    postprocess_visualization_guardrail="failed"
+    postprocess_visualization_guardrail_reason="paras_pos_vis.yml is present but time_end could not be determined safely"
+    postprocess_visualization_time_end="unknown"
+    postprocess_visualization_available_solution_max="unknown"
+    return 1
+  fi
+
+  if ! available_max="$(detect_max_solution_output_index)"; then
+    postprocess_visualization_guardrail="failed"
+    postprocess_visualization_guardrail_reason="no SOL_*.pvtu outputs were found, so vis_3d_mixed readiness cannot be established"
+    postprocess_visualization_time_end="$configured_time_end"
+    postprocess_visualization_available_solution_max="unknown"
+    return 1
+  fi
+
+  postprocess_visualization_time_end="$configured_time_end"
+  postprocess_visualization_available_solution_max="$available_max"
+
+  if (( 10#$configured_time_end > 10#$available_max )); then
+    postprocess_visualization_guardrail="failed"
+    postprocess_visualization_guardrail_reason="paras_pos_vis.yml time_end exceeds the actual available solution output range for this run"
+    return 1
+  fi
+
+  postprocess_visualization_guardrail="passed"
+  postprocess_visualization_guardrail_reason="paras_pos_vis.yml time_end is within the actual available solution output range for this run"
 }
 
 yaml_block_has_entries() {
@@ -1135,6 +1205,33 @@ run_postprocess_stage() {
     printf '[mixpg] downstream dependency found: %s\n' "$postprocess_dependency_found_json"
   } >>"$postprocess_log"
 
+  if ! verify_visualization_readiness; then
+    postprocess_exit_codes_json="$(json_array_from_values "${postprocess_exit_codes[@]}")"
+    set_stage_failed "postprocess"
+    next_step="inspect_postprocess_log"
+    current_stage="postprocess"
+    {
+      printf '[mixpg] visualization yaml: %s\n' "$postprocess_visualization_yaml"
+      printf '[mixpg] visualization yaml present: %s\n' "$postprocess_visualization_yaml_present"
+      printf '[mixpg] visualization configured time_end: %s\n' "$postprocess_visualization_time_end"
+      printf '[mixpg] visualization available solution max: %s\n' "$postprocess_visualization_available_solution_max"
+      printf '[mixpg] visualization guardrail: %s\n' "$postprocess_visualization_guardrail"
+      printf '[mixpg] visualization guardrail reason: %s\n' "$postprocess_visualization_guardrail_reason"
+    } >>"$postprocess_log"
+    record_failure "visualization readiness check failed after postprocess" 1
+    write_state
+    return 1
+  fi
+
+  {
+    printf '[mixpg] visualization yaml: %s\n' "$postprocess_visualization_yaml"
+    printf '[mixpg] visualization yaml present: %s\n' "$postprocess_visualization_yaml_present"
+    printf '[mixpg] visualization configured time_end: %s\n' "$postprocess_visualization_time_end"
+    printf '[mixpg] visualization available solution max: %s\n' "$postprocess_visualization_available_solution_max"
+    printf '[mixpg] visualization guardrail: %s\n' "$postprocess_visualization_guardrail"
+    printf '[mixpg] visualization guardrail reason: %s\n' "$postprocess_visualization_guardrail_reason"
+  } >>"$postprocess_log"
+
   postprocess_exit_codes_json="$(json_array_from_values "${postprocess_exit_codes[@]}")"
   postprocess_status="completed"
   top_level_status="ready"
@@ -1252,6 +1349,12 @@ write_state() {
       "reason": "$postprocess_reason",
       "cpu_size": "$postprocess_cpu_size",
       "time_end": "$postprocess_time_end",
+      "visualization_yaml": "$postprocess_visualization_yaml",
+      "visualization_yaml_present": $(json_bool "$postprocess_visualization_yaml_present"),
+      "visualization_time_end": "$postprocess_visualization_time_end",
+      "visualization_available_solution_max": "$postprocess_visualization_available_solution_max",
+      "visualization_guardrail": "$postprocess_visualization_guardrail",
+      "visualization_guardrail_reason": "$postprocess_visualization_guardrail_reason",
       "downstream_dependency_guardrail": "$postprocess_dependency_guardrail",
       "downstream_dependency_guardrail_reason": "$postprocess_dependency_guardrail_reason",
       "downstream_dependency_patterns": $postprocess_dependency_patterns_json,
