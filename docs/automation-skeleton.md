@@ -158,7 +158,7 @@ end of the implemented workflow.
   `mpirun -np <cpu_size> ./reanalysis_proj_driver -time_end <time_end>`
   then `./prepostproc`
 - optional or conditional downstream tools such as `post_surface_force` and `vis_3d_mixed` are not auto-run in this step
-- for postprocess, the state file records the chosen sequence, `cpu_size`, derived `time_end`, explicit MPI launcher choice, linked MPI installation, log file, and exit codes
+- for postprocess, the state file records the chosen sequence, `cpu_size`, derived `time_end`, explicit MPI launcher choice, linked MPI installation, downstream dependency guardrail results, log file, and exit codes
 - on failure, the state file records the exit code and log file path under `failure`
 - the current script is already fairly long, so maintenance should prefer small shared helpers and stage-local functions instead of adding more inline branching
 
@@ -188,6 +188,29 @@ These files are cleaned because they are generated preprocess or partition
 artifacts. The executor does not remove source files, YAML inputs, compiled
 executables, solver outputs, or the whole build directory unless `--clean` is
 explicitly requested for the build stage.
+
+## Postprocess Dependency Order
+
+The conservative dependency order is:
+
+1. `reanalysis_proj_driver`
+2. `prepostproc`
+3. `post_surface_force`
+4. `vis_3d_mixed`
+
+`post_surface_force` and `vis_3d_mixed` depend on generated files such as
+`postpart_p*.h5`, which are produced by `prepostproc`.
+
+The current executor still implements only:
+
+1. `reanalysis_proj_driver`
+2. `prepostproc`
+
+But it now enforces a downstream guardrail after `prepostproc`: if
+`postpart_p*.h5` is missing, the workflow fails clearly and records that the
+downstream dependency chain is not ready. This prevents later tooling from
+treating downstream postprocess steps as safe to run before their dependency
+artifacts exist.
 
 ## Resume Contract
 

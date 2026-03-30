@@ -67,6 +67,10 @@ postprocess_cpu_size="unknown"
 postprocess_time_end="unknown"
 postprocess_command_display="[]"
 postprocess_exit_codes_json="[]"
+postprocess_dependency_guardrail="pending"
+postprocess_dependency_guardrail_reason="not_checked"
+postprocess_dependency_patterns_json='["postpart_p*.h5"]'
+postprocess_dependency_found_json="[]"
 postprocess_mpi_launcher=""
 postprocess_mpi_linked_prefix=""
 postprocess_mpi_linked_family="unknown"
@@ -340,6 +344,9 @@ load_state_for_resume() {
   postprocess_command_display="$(extract_state_raw "postprocess" "commands")"
   postprocess_log="$(extract_state_string "postprocess" "log_file")"
   postprocess_exit_codes_json="$(extract_state_raw "postprocess" "exit_codes")"
+  postprocess_dependency_guardrail="$(extract_state_string "postprocess" "downstream_dependency_guardrail")"
+  postprocess_dependency_guardrail_reason="$(extract_state_string "postprocess" "downstream_dependency_guardrail_reason")"
+  postprocess_dependency_found_json="$(extract_state_raw "postprocess" "downstream_dependency_found")"
   postprocess_attempt_count="$(extract_state_raw "postprocess" "attempts")"
   if [[ -z "$postprocess_attempt_count" ]]; then
     postprocess_attempt_count="0"
@@ -607,6 +614,31 @@ compute_time_end() {
       print rounded
     }
   '
+}
+
+verify_postprocess_downstream_dependencies() {
+  local -a found_files=()
+  local candidate=""
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    found_files+=( "$candidate" )
+  done < <(find "$build_dir" -maxdepth 1 -type f -name 'postpart_p*.h5' | sort)
+
+  if [[ "${#found_files[@]}" -eq 0 ]]; then
+    postprocess_dependency_guardrail="failed"
+    postprocess_dependency_guardrail_reason="prepostproc completed but did not produce postpart_p*.h5, so downstream tools such as post_surface_force or vis_3d_mixed must not run"
+    postprocess_dependency_found_json="[]"
+    return 1
+  fi
+
+  postprocess_dependency_guardrail="passed"
+  postprocess_dependency_guardrail_reason="prepostproc produced postpart_p*.h5, so downstream tools would satisfy this dependency check if explicitly implemented later"
+  postprocess_dependency_found_json="["
+  for candidate in "${found_files[@]}"; do
+    postprocess_dependency_found_json="${postprocess_dependency_found_json}\"${candidate}\", "
+  done
+  postprocess_dependency_found_json="${postprocess_dependency_found_json%, }]"
 }
 
 yaml_block_has_entries() {
@@ -1080,6 +1112,29 @@ run_postprocess_stage() {
     return 1
   fi
 
+  if ! verify_postprocess_downstream_dependencies; then
+    postprocess_exit_codes_json="$(json_array_from_values "${postprocess_exit_codes[@]}")"
+    set_stage_failed "postprocess"
+    next_step="inspect_postprocess_log"
+    current_stage="postprocess"
+    {
+      printf '[mixpg] downstream dependency guardrail: %s\n' "$postprocess_dependency_guardrail"
+      printf '[mixpg] downstream dependency guardrail reason: %s\n' "$postprocess_dependency_guardrail_reason"
+      printf '[mixpg] downstream dependency patterns: %s\n' "$postprocess_dependency_patterns_json"
+      printf '[mixpg] downstream dependency found: %s\n' "$postprocess_dependency_found_json"
+    } >>"$postprocess_log"
+    record_failure "postprocess downstream dependency artifacts missing after prepostproc" 1
+    write_state
+    return 1
+  fi
+
+  {
+    printf '[mixpg] downstream dependency guardrail: %s\n' "$postprocess_dependency_guardrail"
+    printf '[mixpg] downstream dependency guardrail reason: %s\n' "$postprocess_dependency_guardrail_reason"
+    printf '[mixpg] downstream dependency patterns: %s\n' "$postprocess_dependency_patterns_json"
+    printf '[mixpg] downstream dependency found: %s\n' "$postprocess_dependency_found_json"
+  } >>"$postprocess_log"
+
   postprocess_exit_codes_json="$(json_array_from_values "${postprocess_exit_codes[@]}")"
   postprocess_status="completed"
   top_level_status="ready"
@@ -1197,6 +1252,10 @@ write_state() {
       "reason": "$postprocess_reason",
       "cpu_size": "$postprocess_cpu_size",
       "time_end": "$postprocess_time_end",
+      "downstream_dependency_guardrail": "$postprocess_dependency_guardrail",
+      "downstream_dependency_guardrail_reason": "$postprocess_dependency_guardrail_reason",
+      "downstream_dependency_patterns": $postprocess_dependency_patterns_json,
+      "downstream_dependency_found": $postprocess_dependency_found_json,
       "mpi_launcher": "$postprocess_mpi_launcher",
       "mpi_linked_prefix": "$postprocess_mpi_linked_prefix",
       "mpi_linked_family": "$postprocess_mpi_linked_family",

@@ -121,6 +121,15 @@
       "reason": "using the common documented standard order shared by the references: reanalysis_proj_driver then prepostproc",
       "cpu_size": "6",
       "time_end": "100",
+      "downstream_dependency_guardrail": "passed",
+      "downstream_dependency_guardrail_reason": "prepostproc produced postpart_p*.h5, so downstream tools would satisfy this dependency check if explicitly implemented later",
+      "downstream_dependency_patterns": [
+        "postpart_p*.h5"
+      ],
+      "downstream_dependency_found": [
+        "/Users/example/build_MixPG/postpart_p00000.h5",
+        "/Users/example/build_MixPG/postpart_p00001.h5"
+      ],
       "mpi_launcher": "/Users/example/lib/mpich-4.1.2-shared/bin/mpirun",
       "mpi_linked_prefix": "/Users/example/lib/mpich-4.1.2-shared",
       "mpi_linked_family": "mpich",

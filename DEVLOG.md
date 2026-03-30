@@ -16,3 +16,4 @@
 - 2026-03-30：收紧 MPI launcher 选择规则，禁止隐式依赖 PATH 中的 mpirun，并在 launcher 与可执行文件链接的 MPI 安装不一致时明确失败。
 - 2026-03-30：为 preprocess 增加 `geo_file_base` 安全护栏与定向清理，只删除可再生的 preprocess/partition 生成物，并把护栏与清理结果写入状态文件。
 - 2026-03-30：明确记录默认 build 配置为 `Release`；现有 build 准备脚本继续使用 `cmake <example_dir> -DCMAKE_BUILD_TYPE=Release`，本次仅补充文档说明，不扩展状态模型。
+- 2026-03-30：修正 postprocess 依赖顺序说明，明确 `prepostproc` 先于 `post_surface_force` 和 `vis_3d_mixed`，并在现有 postprocess 流程后校验 `postpart_p*.h5` 是否已生成。
