@@ -26,3 +26,4 @@
 - 2026-05-18：将 skill 的 `build dir policy` 默认值从 `reuse` 改为 `clean`，默认删除原有 `~/build_MixPG` 后重建，以减少旧构建目录残留带来的干扰。
 - 2026-05-18：新增 `README.md`，面向用户说明这个 skill 的用途、下载、安装、调用、对话方式、后处理默认值和关键规则，并加入流程图帮助理解。
 - 2026-05-18：补充 skill 执行纪律规则：要求单一真相源、单一受控执行入口、预检 `geo_file_base`/`cpu_size`/MPI launcher 一致性，并把运行时 warning 与 fatal failure 明确分级，减少边试边改和双份输入导致的操作性错误。
+- 2026-05-18：收紧 skill 的后处理表述与简单双向检查规则：只有 `vis_3d_mixed` 命令真实成功执行后才能宣称已运行；对简单单向加载，`post_surface_force` 默认只校验加载面以及对应方向的位移/traction 分量，不把无关方向当成必要项。
