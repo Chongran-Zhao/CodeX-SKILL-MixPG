@@ -41,6 +41,7 @@ for example:
 - traction magnitude or displacement magnitude when the loading mode requires it
 - constitutive model choice
 - whether to reuse the current build directory or clean it
+- which postprocess executables are enabled
 
 Suggested style:
 
@@ -58,12 +59,27 @@ Suggested style:
 | initial_time | 用户填写 | 0.0 | s |
 | initial_step | 用户填写 | 0.01 | s |
 | final_time | 用户填写 | 1.0 | s |
-| constitutive model | 保持当前 / 用户指定 | 保持当前 | `MaterialModelData.hpp` |
+| constitutive model | 保持当前 / 用户指定 | 保持当前 | 这里要写出当前代码里的具体模型名称 |
 | build dir policy | reuse / clean | reuse | 已存在目录默认不清理 |
+| reanalysis_proj_driver | allow / skip | allow | 后处理第一步 |
+| prepostproc | allow / skip | allow | 后处理第二步 |
+| post_surface_force | allow / skip | allow | 默认运行 |
+| vis_3d_mixed | allow / skip | allow | 默认运行 |
+| divV_calculator | allow / skip | skip | 默认不运行 |
 ```
 
 Traction cases must explicitly confirm the traction magnitude. Do not invent a
 traction value silently.
+
+When presenting "keep current" choices, always resolve them to concrete current
+values from the code or template first:
+
+- for constitutive model, write the actual currently integrated model name
+- for mesh, write the actual current template element counts such as `4 x 4 x 4`
+- for postprocess executables, list each executable explicitly with allow/skip
+  and mark its default
+- for traction loading, allow the user to provide a traction expression, not
+  only a scalar magnitude
 
 Good progress labels:
 
@@ -90,6 +106,12 @@ Use these defaults unless the user overrides them:
 - `initial_step: 0.01`
 - `final_time: 1.0`
 - default constitutive model: keep the currently integrated model in `MaterialModelData.hpp`
+- default postprocess enablement:
+  `reanalysis_proj_driver = allow`,
+  `prepostproc = allow`,
+  `post_surface_force = allow`,
+  `vis_3d_mixed = allow`,
+  `divV_calculator = skip`
 
 Compute postprocess step index with:
 
@@ -357,6 +379,14 @@ Standard order:
 4. whichever downstream tool the user wants, for example:
    `mpirun -np <cpu_size> ./vis_3d_mixed -time_end <time_end>`
 
+Default enablement when the user does not override it:
+
+- `reanalysis_proj_driver`: allow
+- `prepostproc`: allow
+- `post_surface_force`: allow
+- `vis_3d_mixed`: allow
+- `divV_calculator`: skip
+
 Rules:
 
 - the driver and all postprocess executables have strict data dependencies and must be run serially
@@ -370,6 +400,9 @@ Rules:
 - `-time_end` is a step index, not physical time
 - before running `vis_3d_mixed`, update `paras_pos_vis.yml` so `time_start`, `time_step`, and `time_end` match the finished run
 - if `paras_pos_vis.yml.time_end` exceeds the highest available `SOL_*.pvtu` index from the current run, treat visualization as not ready and fail clearly instead of attempting `vis_3d_mixed`
+- if `post_surface_force` or `vis_3d_mixed` is enabled, update the corresponding inputs before execution instead of assuming the template is already correct
+- if `post_surface_force` or `vis_3d_mixed` is enabled, synchronize their processed time-step range with the finished run
+- if `vis_3d_mixed` is enabled, check that its material-model-related settings and the expected number of internal variables are consistent with the finished run before treating visualization as safe
 
 ### Surface-force postprocess rule
 
@@ -392,6 +425,22 @@ Consistency checks:
 - the target face in `post_surface_traction.cpp` must match the traction or displacement loading face
 - the recorded component in `Force_disp_record.txt` must match the requested loading direction
 - the time range used by `post_surface_force` must match the computed run range instead of stopping at the example default
+
+### Visualization postprocess rule
+
+If `vis_3d_mixed` is requested or part of the default postprocess chain:
+
+- update `paras_pos_vis.yml`
+- make `time_start`, `time_step`, and `time_end` match the finished run
+- make sure the visualization input is consistent with the finished material model
+- make sure the expected number of internal variables matches the finished run
+
+Consistency checks:
+
+- `paras_pos_vis.yml.time_end` must not exceed the highest available `SOL_*.pvtu` index
+- the visualization time range must match the finished run instead of an example template
+- the material-model-related visualization settings must match the actual solved case
+- the expected internal-variable count must match the generated outputs for the solved case
 
 ## Failure Policy
 
