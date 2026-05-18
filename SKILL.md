@@ -11,6 +11,7 @@ Use this skill as a task-friendly execution guide. Do not simulate a separate pr
 - use simple stage labels
 - make checkpoints explicit
 - stop immediately on blocking failures
+- never create git commits inside the source-file repository that is being edited or used for the scientific case setup
 
 ## User Input Policy
 
