@@ -19,3 +19,4 @@
 - 2026-03-30：修正 postprocess 依赖顺序说明，明确 `prepostproc` 先于 `post_surface_force` 和 `vis_3d_mixed`，并在现有 postprocess 流程后校验 `postpart_p*.h5` 是否已生成。
 - 2026-03-30：增加 vis_3d_mixed 的保守可视化护栏，校验 `paras_pos_vis.yml.time_end` 不得超过当前实际 `SOL_*.pvtu` 输出范围，并把结果作为下游可视化 readiness 写入状态文件。
 - 2026-05-18：为 skill 增加集中提问规则；当用户未指定多个可选输入时，要求一次性汇总成一个问题并为每项提供默认值，减少来回确认。
+- 2026-05-18：进一步收紧 skill 提问样式：集中确认时要求列出所有选项、显式标注默认值、优先使用表格展示，并说明带单位的量默认按国际标准单位制（SI）解释；同时要求 traction case 必须显式确认载荷数值。

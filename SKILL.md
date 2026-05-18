@@ -21,7 +21,11 @@ The consolidated question should:
 
 - group all missing selectable inputs in one message
 - show the default value for each item when a safe default exists
+- list all available options for categorical inputs
 - let the user answer by accepting defaults or overriding only the items they care about
+- use a clean table when the input list is long enough to benefit from structured display
+- mark the default choice explicitly in the table
+- state that quantities with units use SI units unless the user explicitly says otherwise
 - avoid repeating follow-up clarification questions unless a later blocker is truly new
 
 Use the consolidated question only for inputs that materially affect case setup,
@@ -34,21 +38,32 @@ for example:
 - `initial_time`
 - `initial_step`
 - `final_time`
+- traction magnitude or displacement magnitude when the loading mode requires it
 - constitutive model choice
 - whether to reuse the current build directory or clean it
 
 Suggested style:
 
-```text
-请一次性确认这些输入；不改的项可直接用默认值：
-- loading mode: traction / displacement（默认：traction）
-- load direction: x / y / z（默认：z）
-- loaded face: top / bot / left / right / front / back（默认：top）
-- cpu_size（默认：6）
-- initial_time（默认：0.0）
-- initial_step（默认：0.01）
-- final_time（默认：1.0）
+```md
+请一次性确认这些输入；不改的项可直接用默认值。带单位的量默认按国际标准单位制（SI）解释。
+
+| 项目 | 可选值 | 默认值 | 单位/说明 |
+| --- | --- | --- | --- |
+| loading mode | traction / displacement | traction | 主加载模式 |
+| load direction | x / y / z | z | 方向 |
+| loaded face | top / bot / left / right / front / back | top | 施加载荷的面 |
+| traction magnitude | 用户填写 | 无默认值 | Pa |
+| time law | constant / ramp | constant | traction 或 displacement 时间形式 |
+| cpu_size | 用户填写 | 6 | 无量纲 |
+| initial_time | 用户填写 | 0.0 | s |
+| initial_step | 用户填写 | 0.01 | s |
+| final_time | 用户填写 | 1.0 | s |
+| constitutive model | 保持当前 / 用户指定 | 保持当前 | `MaterialModelData.hpp` |
+| build dir policy | reuse / clean | reuse | 已存在目录默认不清理 |
 ```
+
+Traction cases must explicitly confirm the traction magnitude. Do not invent a
+traction value silently.
 
 Good progress labels:
 
