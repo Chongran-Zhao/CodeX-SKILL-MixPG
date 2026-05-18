@@ -18,3 +18,4 @@
 - 2026-03-30：明确记录默认 build 配置为 `Release`；现有 build 准备脚本继续使用 `cmake <example_dir> -DCMAKE_BUILD_TYPE=Release`，本次仅补充文档说明，不扩展状态模型。
 - 2026-03-30：修正 postprocess 依赖顺序说明，明确 `prepostproc` 先于 `post_surface_force` 和 `vis_3d_mixed`，并在现有 postprocess 流程后校验 `postpart_p*.h5` 是否已生成。
 - 2026-03-30：增加 vis_3d_mixed 的保守可视化护栏，校验 `paras_pos_vis.yml.time_end` 不得超过当前实际 `SOL_*.pvtu` 输出范围，并把结果作为下游可视化 readiness 写入状态文件。
+- 2026-05-18：为 skill 增加集中提问规则；当用户未指定多个可选输入时，要求一次性汇总成一个问题并为每项提供默认值，减少来回确认。

@@ -12,6 +12,44 @@ Use this skill as a task-friendly execution guide. Do not simulate a separate pr
 - make checkpoints explicit
 - stop immediately on blocking failures
 
+## User Input Policy
+
+When the user request leaves multiple selectable inputs unspecified, ask for them
+once in a single consolidated question instead of asking them one by one.
+
+The consolidated question should:
+
+- group all missing selectable inputs in one message
+- show the default value for each item when a safe default exists
+- let the user answer by accepting defaults or overriding only the items they care about
+- avoid repeating follow-up clarification questions unless a later blocker is truly new
+
+Use the consolidated question only for inputs that materially affect case setup,
+for example:
+
+- loading mode
+- load direction and loaded face
+- mesh resolution
+- `cpu_size`
+- `initial_time`
+- `initial_step`
+- `final_time`
+- constitutive model choice
+- whether to reuse the current build directory or clean it
+
+Suggested style:
+
+```text
+请一次性确认这些输入；不改的项可直接用默认值：
+- loading mode: traction / displacement（默认：traction）
+- load direction: x / y / z（默认：z）
+- loaded face: top / bot / left / right / front / back（默认：top）
+- cpu_size（默认：6）
+- initial_time（默认：0.0）
+- initial_step（默认：0.01）
+- final_time（默认：1.0）
+```
+
 Good progress labels:
 
 - `Build Setup`
