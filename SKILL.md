@@ -535,6 +535,83 @@ Consistency checks:
 - the material-model-related visualization settings must match the actual solved case
 - the expected internal-variable count must match the generated outputs for the solved case
 
+## Reporting
+
+After the requested run and postprocess stages finish successfully, create a
+report package under:
+
+- `~/build_MixPG/report`
+
+Required outputs:
+
+- a scientific-quality figure generated from the post-surface-force
+  time-displacement-traction record
+- at least one visualization figure exported from the completed
+  `vis_3d_mixed` workflow when visualization is enabled
+- a report document in Markdown
+- a PDF converted from that Markdown report
+
+Default reporting rule:
+
+- create `~/build_MixPG/report` if it does not exist
+- place the generated figures in that directory
+- write the report in Markdown first
+- then convert the Markdown report to PDF
+
+### Surface-force figure rule
+
+If `post_surface_force` is enabled and produces a time-displacement-force or
+time-displacement-traction record, plot it in a scientific style instead of
+leaving it as raw text only.
+
+For simple single-direction loading:
+
+- the plot only needs the loaded-direction displacement and the matching
+  loaded-direction traction or force quantity
+- do not clutter the figure with unrelated components unless the user asked for
+  them
+
+Plot expectations:
+
+- use clear axis labels with units
+- use a clean white background and readable font sizes
+- include a concise title or caption identifying the case and loaded direction
+- save the figure into `~/build_MixPG/report`
+
+### Visualization figure rule
+
+If `vis_3d_mixed` is enabled, do not stop at raw visualization files alone.
+
+Required reporting behavior:
+
+- export at least one representative visualization image for the current run
+- place that image in `~/build_MixPG/report`
+- include it in the final report
+
+### Report content rule
+
+The final report should be concise but publication-oriented.
+
+Minimum contents:
+
+- case summary
+- geometry and mesh summary
+- constitutive model summary
+- loading summary
+- solver and time-step summary
+- one force- or traction-related figure from `post_surface_force`
+- one visualization figure
+- a short result interpretation in plain language
+
+### Reporting guardrails
+
+- do not claim the report is complete unless the Markdown file, PDF file, and
+  required images all exist in `~/build_MixPG/report`
+- do not claim a visualization figure exists unless `vis_3d_mixed` actually ran
+  successfully and the image was exported
+- if the surface-force record exists but no figure was generated from it, treat
+  the reporting stage as incomplete
+
 ## Failure Policy
 
 Stop immediately and explain the issue if you see any of these:

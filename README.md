@@ -182,6 +182,33 @@ skill 常见会确认这些信息：
 - 材料模型一致性
 - 内变量个数一致性
 
+## 报告交付
+
+运行和后处理完成后，skill 现在还应继续交付一份报告包，默认放在：
+
+- `~/build_MixPG/report`
+
+这个 `report` 文件夹里至少应包含：
+
+- `post_surface_force` 生成的数据对应的科研风格图片
+- `vis_3d_mixed` 导出的代表性可视化图片
+- 一份 Markdown 报告
+- 一份由 Markdown 转换得到的 PDF 报告
+
+报告内容至少应覆盖：
+
+- case 简述
+- geometry / mesh
+- constitutive model
+- loading
+- solver / time stepping
+- 力或 traction 曲线图
+- 可视化图
+- 简短结果解释
+
+对简单单向加载，力学图默认只画加载方向对应的位移和 traction / force，
+不强制加入其他无关分量，这样图更适合科研展示。
+
 ## 重要规则
 
 - 默认 build 目录策略现在是：`clean`
