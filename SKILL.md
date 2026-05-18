@@ -62,7 +62,7 @@ Suggested style:
 | initial_step | 用户填写 | 0.01 | s |
 | final_time | 用户填写 | 1.0 | s |
 | constitutive model | 保持当前 / 用户指定 | 保持当前 | 这里要写出当前代码里的具体模型名称 |
-| build dir policy | reuse / clean | reuse | 已存在目录默认不清理 |
+| build dir policy | reuse / clean | clean | 默认删除原有 `~/build_MixPG` 后重建 |
 | reanalysis_proj_driver | allow / skip | allow | 后处理第一步 |
 | prepostproc | allow / skip | allow | 后处理第二步 |
 | post_surface_force | allow / skip | allow | 默认运行 |
@@ -108,6 +108,7 @@ Use these defaults unless the user overrides them:
 - `initial_step: 0.01`
 - `final_time: 1.0`
 - default constitutive model: keep the currently integrated model in `MaterialModelData.hpp`
+- default build directory policy: clean existing `~/build_MixPG` before rebuild
 - default postprocess enablement:
   `reanalysis_proj_driver = allow`,
   `prepostproc = allow`,
