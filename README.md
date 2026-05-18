@@ -203,6 +203,20 @@ skill 常见会确认这些信息：
 
 这样更稳定，也更省 token。
 
+如果本机环境已经具备 `matplotlib`、`meshio`、`pandoc` 和 `xelatex`，
+更推荐直接复用仓库里的固定报告脚本：
+
+```bash
+python3 /Users/chongran/CodeX-SKILL-MixPG/scripts/render_mixpg_report.py ...
+```
+
+它的职责就是：
+
+- 读取现成的 `Force_disp_record.txt` 和 `vis_3d_mixed` 结果
+- 生成科研风格图片
+- 用模板填充 Markdown 报告
+- 导出 PDF
+
 报告内容至少应覆盖：
 
 - case 简述

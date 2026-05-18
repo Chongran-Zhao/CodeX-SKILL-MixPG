@@ -29,3 +29,4 @@
 - 2026-05-18：收紧 skill 的后处理表述与简单双向检查规则：只有 `vis_3d_mixed` 命令真实成功执行后才能宣称已运行；对简单单向加载，`post_surface_force` 默认只校验加载面以及对应方向的位移/traction 分量，不把无关方向当成必要项。
 - 2026-05-18：为 skill 增加报告交付规则：运行完成后需在 `~/build_MixPG/report` 下产出科研风格的表面力学图片、可视化图片、Markdown 报告和 PDF 报告，并把这些结果作为完整交付的一部分而不是可选附加项。
 - 2026-05-18：根据实际运行中的失误，进一步收紧 skill：禁止把依赖型后处理并行发起；要求 `reanalysis_proj_driver` 的 `vis_m` 先与材料模型内变量组数对齐；要求 `post_surface_force` 后强制检查 `Force_disp_record.txt` 中是否存在 `nan/inf`；同时新增可复用的报告模板，要求后续报告只填充本次结果而不是每次从零生成整篇正文，以减少 token 消耗。
+- 2026-05-18：新增固定报告渲染脚本 `scripts/render_mixpg_report.py`，把绘图、模板填充和 PDF 导出收敛成稳定入口；同时在 skill 和 README 中明确后续应优先复用该脚本，而不是每次临时从零组织报告流程。

@@ -559,6 +559,8 @@ Default reporting rule:
 
 - create `~/build_MixPG/report` if it does not exist
 - place the generated figures in that directory
+- prefer calling the shared report-rendering script instead of improvising the whole report flow in-chat:
+  `python3 /Users/chongran/CodeX-SKILL-MixPG/scripts/render_mixpg_report.py ...`
 - reuse a stable report template whenever possible instead of drafting the whole report from scratch
 - write the report in Markdown first
 - then convert the Markdown report to PDF
