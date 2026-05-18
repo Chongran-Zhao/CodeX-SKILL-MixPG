@@ -129,6 +129,85 @@ Example:
 
 If this is not an integer, stop and ask the user to reconcile `final_time` and `initial_step`.
 
+## Execution Discipline
+
+Keep execution conservative and reproducible.
+
+### Single source of truth
+
+Do not maintain the same case input in both the source example tree and the
+build directory at the same time.
+
+Default rule:
+
+- edit the source example inputs and source files first
+- then rebuild or restage into `~/build_MixPG`
+- then run from the build directory
+
+Only use build-directory-only hotfixes in an explicit debug or recovery mode,
+and if you do:
+
+- say clearly that the build copy has diverged from the source template
+- list exactly which build-directory files were changed
+- do not also change the corresponding source files in the same pass unless the
+  user explicitly asks to reconcile them
+
+### Single execution entrypoint
+
+After input confirmation and file edits are done, prefer one controlled workflow
+path instead of scattering manual stage runs.
+
+Default rule:
+
+- use the existing build-preparation script for build setup
+- then run preprocess, driver, and postprocess in the documented order
+- do not mix ad hoc extra commands into the middle of the workflow unless you
+  explicitly label the session as manual debugging
+
+### Preflight before execution
+
+Before running any preprocess or MPI stage, validate the key operational inputs
+first instead of discovering them by trial and error.
+
+Required checks:
+
+- `geo_file_base + "0.yml"` must resolve to a real file before preprocess
+- `cpu_size` must be consistent across preprocess, driver, and MPI postprocess
+- the chosen MPI launcher must match the MPI installation linked by the target
+  executable
+
+Do not "try several path variants" during normal execution. If the resolved
+path is unsafe or ambiguous, stop and explain the blocker.
+
+### Build-script invocation rule
+
+Do not rely on the executable bit of the build-preparation script.
+
+Preferred form:
+
+```bash
+bash /Users/chongran/CodeX-SKILL-MixPG/scripts/prepare_visco_build.sh ...
+```
+
+### Warning vs fatal rule
+
+Do not treat every noisy runtime message as a solver failure, but do not ignore
+it either.
+
+Classify outcomes as:
+
+- `fatal`: nonzero exit code, missing required artifacts, missing executables,
+  inconsistent inputs, or violated stage dependencies
+- `warning`: the main stage exits with code `0` and produces the required
+  outputs, but logs contain post-run cleanup warnings or similar non-blocking
+  messages
+
+If a warning occurs:
+
+- report it explicitly
+- keep it separate from scientific-result success or failure
+- only continue if the required outputs for the next stage actually exist
+
 ## Build Setup
 
 Check:
@@ -355,7 +434,7 @@ Choose the executable by loading type:
 Run with:
 
 ```bash
-mpirun -np <cpu_size> <driver_executable> | tee driver_log.txt
+<matched_mpi_launcher> -np <cpu_size> <driver_executable> | tee driver_log.txt
 ```
 
 Rules:
@@ -363,6 +442,9 @@ Rules:
 - `-np` must match preprocessor `cpu_size`
 - default `cpu_size` is `6`
 - always save output to `driver_log.txt`
+- do not use whichever `mpirun` or `mpiexec` appears first in `PATH`
+- use an explicitly chosen launcher that matches the MPI installation linked by
+  the driver executable
 
 ## Postprocess
 
@@ -376,11 +458,11 @@ Use the actual built names:
 
 Standard order:
 
-1. `mpirun -np <cpu_size> ./reanalysis_proj_driver -time_end <time_end>`
+1. `<matched_mpi_launcher> -np <cpu_size> ./reanalysis_proj_driver -time_end <time_end>`
 2. `./prepostproc`
-3. `mpirun -np <cpu_size> ./post_surface_force`
+3. `<matched_mpi_launcher> -np <cpu_size> ./post_surface_force`
 4. whichever downstream tool the user wants, for example:
-   `mpirun -np <cpu_size> ./vis_3d_mixed -time_end <time_end>`
+   `<matched_mpi_launcher> -np <cpu_size> ./vis_3d_mixed -time_end <time_end>`
 
 Default enablement when the user does not override it:
 
