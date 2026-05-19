@@ -175,6 +175,9 @@ Required checks:
 - `cpu_size` must be consistent across preprocess, driver, and MPI postprocess
 - the chosen MPI launcher must match the MPI installation linked by the target
   executable
+- for displacement cases, the requested load direction must be consistent across
+  runtime YAML, init YAML, `mixed_ga_driver_displacement.cpp`, and
+  `PNonlinear_Solver.cpp` before build or run starts
 
 Do not "try several path variants" during normal execution. If the resolved
 path is unsafe or ambiguous, stop and explain the blocker.
@@ -406,6 +409,8 @@ Consistency checks:
 - requested displacement direction must also match the `base_*` vector used in `PNonlinear_Solver.cpp`
 - for uniaxial displacement tension, the loaded face must also be constrained to zero in the other two directions
 - requested load duration must match the time law and `paras_driver.yml`
+- if any of those direction checks disagree, treat it as a preflight blocker and
+  do not proceed to build, preprocess, or driver
 
 ## Driver Time Setup
 

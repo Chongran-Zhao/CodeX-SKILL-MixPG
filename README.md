@@ -64,6 +64,9 @@ cp -R /path/to/CodeX-SKILL-MixPG ~/.codex/skills/mixpg-case-runner
 
 - skill 源仓库：`/Users/chongran/CodeX-SKILL-MixPG`
 - 本地安装版：`/Users/chongran/.codex/skills/mixpg-case-runner/SKILL.md`
+- 兼容根目录入口：`/Users/chongran/.codex/skills/SKILL.md`
+
+如果你既会用根目录入口，也会用具名目录入口，最好两边都保持同步，避免不同触发方式命中不同版本。
 
 ## 怎么调用
 
@@ -203,6 +206,15 @@ skill 常见会确认这些信息：
   模板文件里的 `time_end` 可能只是很大的占位值，不能直接拿来跑；必须先和当前实际 `SOL_*` 输出范围对齐
 - 旧运行说明：
   如果 `simulation_running_note.txt` 这类旧说明和当前可执行程序或真实命令顺序冲突，skill 会以当前源码和当前 build 出来的可执行程序为准
+
+其中位移方向一致性现在应被当成运行前硬阻断条件，而不是运行中再发现的问题：
+
+- 运行前要同时检查 runtime YAML
+- 运行前要同时检查 init YAML
+- 运行前要同时检查 `mixed_ga_driver_displacement.cpp`
+- 运行前要同时检查 `PNonlinear_Solver.cpp`
+
+只要这几处方向不一致，就不应该继续 build、preprocess 或 driver。
 
 ## 报告交付
 
