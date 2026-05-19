@@ -136,6 +136,10 @@ Required rule:
 - prepare isolated build directories for each branch
 - do not let one branch reuse the other branch's build artifacts
 - apply the same case definition to both branches
+- if the normal single-branch workflow depends on machine-local files that are
+  not guaranteed to be tracked by git, such as local config under `conf/`,
+  explicitly provision those files into each isolated branch workspace before
+  build; do not assume `git worktree` alone gives a fully runnable environment
 
 ### Compare-mode consistency rule
 
@@ -150,6 +154,19 @@ Required rule:
 - `cpu_size` must match
 - `initial_time`, `initial_step`, and `final_time` must match
 - MPI-launcher selection rules must be applied consistently to both branches
+- the semantic load direction must match across all branch-local control points,
+  including runtime YAML, init YAML, driver-direction code paths, and load
+  functions, even if the exact file layout differs between branches
+
+Before launching build or run on either branch, summarize the shared case in a
+branch-independent way and verify that both branches resolve to the same:
+
+- loading mode
+- loaded face
+- loaded direction
+- mesh
+- constitutive model choice
+- postprocess enablement
 
 Do not silently change one branch's scientific inputs just to make the
 comparison easier.
@@ -169,6 +186,23 @@ The comparison report should distinguish at least three layers:
 
 If one branch fails, report that explicitly instead of forcing a symmetric
 result table.
+
+### Compare-mode sanity checks
+
+Do not treat "both branches ran" as sufficient evidence of a meaningful
+comparison.
+
+Required rule:
+
+- if a displacement-driven or traction-driven compare case produces a trivial
+  all-zero response on both branches, treat that as a likely inactive-load or
+  misconfigured-case failure, not as a successful match
+- for compare mode, check at least one simple response indicator before
+  declaring the run meaningful, for example:
+  nonzero displacement history, nonzero force/traction history, or another
+  case-appropriate scalar response
+- if the response is trivially zero on both branches, stop and fix the shared
+  case definition before moving on to downstream comparison reporting
 
 At each checkpoint, briefly report:
 

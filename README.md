@@ -166,6 +166,7 @@ vis_3d_mixed=allow
 - 两个 branch 必须使用隔离的 source workspace 和隔离的 build 目录
 - 不允许一个 branch 复用另一个 branch 的 build 产物
 - 比较完成后，每个 branch workspace 都必须恢复为无 diff 状态
+- 如果单分支 workflow 依赖 machine-local 配置文件，例如 `conf/system_lib_loading.cmake` 这类 git worktree 不一定自带的文件，compare mode 需要显式把这些本地配置补到每个隔离 workspace，再开始 build
 
 如果用户只说“比较开发分支和主分支”，skill 应先列出分支供用户确认，再开始执行。
 
@@ -179,6 +180,18 @@ vis_3d_mixed=allow
   位移、力或 traction 的摘要指标和代表性曲线/图像
 
 如果其中一个 branch 失败，报告应明确写出失败发生在哪个 stage，而不是假装两个 branch 都拿到了可比结果。
+
+另外，compare mode 不能只看“两个 branch 都跑起来了”：
+
+- 如果共享 case 实际上没有被正确激活，两个 branch 可能都会给出全零响应
+- 这不应被当成“结果一致”
+- 在进入正式对比报告前，skill 至少要检查一个简单响应量是否非零，例如位移、力或 traction 曲线
+
+还有一条很重要：
+
+- compare mode 不能只比文件名是否改了
+- 它必须比“语义上是不是同一个 case”
+- 比如位移加载方向，必须同时检查 runtime YAML、init YAML、driver 方向代码和加载函数是否在两个 branch 上都指向同一个方向
 
 ## 运行流程图
 
