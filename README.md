@@ -272,6 +272,9 @@ skill 常见会确认这些信息：
 | `vis_3d_mixed` | allow |
 | `divV_calculator` | skip |
 
+默认情况下，`vis_3d_mixed` 不只是“允许”，而是应该作为正常后处理和报告流程的一部分实际运行。
+只有用户明确关闭，或 readiness 检查失败时，才不运行；如果 readiness 失败，需要把它报告为可视化/报告阶段阻断，而不是求解器科学失败。
+
 如果启用了 `post_surface_force` 或 `vis_3d_mixed`，skill 应该同步处理：
 
 - 对应输入文件

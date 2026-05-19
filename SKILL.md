@@ -281,6 +281,8 @@ Use these defaults unless the user overrides them:
   `post_surface_force = allow`,
   `vis_3d_mixed = allow`,
   `divV_calculator = skip`
+- default visualization policy: run `vis_3d_mixed` as part of the normal
+  postprocess/reporting path unless the user explicitly disables it
 
 Compute postprocess step index with:
 
@@ -689,6 +691,15 @@ Default enablement when the user does not override it:
 - `post_surface_force`: allow
 - `vis_3d_mixed`: allow
 - `divV_calculator`: skip
+
+Default behavior:
+
+- `vis_3d_mixed` is enabled by default and should be executed after
+  `prepostproc` and `post_surface_force` when its readiness checks pass
+- readiness checks are guardrails, not a substitute for execution; do not stop
+  at "visualization ready" if the default visualization step is still enabled
+- if visualization readiness fails, report it as a postprocess/reporting
+  blocker, not as a scientific solver failure
 
 Rules:
 
