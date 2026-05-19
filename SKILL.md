@@ -93,6 +93,83 @@ Good progress labels:
 - `Driver`
 - `Postprocess`
 
+## Branch Compare Mode
+
+This is a separate, explicit mode for comparing two source branches on the same
+`viscoelasticity_NURBS_TaylorHood` example.
+
+Do not activate this mode unless the user clearly asks for branch comparison,
+for example:
+
+- compare two branches
+- compare a development branch against `master` or `main`
+- run the same viscoelasticity case on two branches and compare outputs
+
+If the user only asks to run a case, stay in the normal single-run mode.
+
+### Compare-mode input policy
+
+When compare mode is requested, ask for branch-related inputs together with the
+normal case inputs in one consolidated question.
+
+At minimum, confirm:
+
+- base branch
+- compare branch
+- whether `master` or `main` is the intended reference branch
+- the shared case definition to run on both branches
+- build policy for both branches
+- comparison focus, such as workflow success, output artifacts, result curves,
+  or all of them
+
+If the user says only "compare development branch and master branch", list the
+available branches first and let the user choose the compare branch explicitly.
+
+### Compare-mode isolation rule
+
+Do not compare branches by repeatedly editing and switching one source tree in
+place.
+
+Required rule:
+
+- prepare isolated source workspaces for each branch
+- prepare isolated build directories for each branch
+- do not let one branch reuse the other branch's build artifacts
+- apply the same case definition to both branches
+
+### Compare-mode consistency rule
+
+The two branches must be compared on the same scientific case.
+
+Required rule:
+
+- geometry must match
+- mesh must match
+- constitutive model must match
+- load expression must match
+- `cpu_size` must match
+- `initial_time`, `initial_step`, and `final_time` must match
+- MPI-launcher selection rules must be applied consistently to both branches
+
+Do not silently change one branch's scientific inputs just to make the
+comparison easier.
+
+### Compare-mode outputs
+
+The comparison report should distinguish at least three layers:
+
+- workflow outcome:
+  build, preprocess, driver, and postprocess success or failure on each branch
+- artifact outcome:
+  whether required files such as `SOL_*`, `Force_disp_record.txt`, and
+  postprocess artifacts were produced on each branch
+- result outcome:
+  summary metrics and representative plots for displacement, force, or
+  traction, using the same case definition on both branches
+
+If one branch fails, report that explicitly instead of forcing a symmetric
+result table.
+
 At each checkpoint, briefly report:
 
 - what changed
@@ -169,6 +246,9 @@ Required rule:
 
 Before declaring completion, verify that the MixPG source repository has no
 remaining diff. If it is not clean, the task is not fully finished.
+
+The same clean-source-tree rule also applies to branch-compare mode: each
+branch workspace must end clean after the comparison run is finished.
 
 ### Single execution entrypoint
 

@@ -84,6 +84,20 @@ cp -R /path/to/CodeX-SKILL-MixPG ~/.codex/skills/mixpg-case-runner
 
 只要请求内容明显是在做 MixPG / MixPERIGEE 算例准备、运行或后处理，这个 skill 就应该被使用。
 
+如果你明确要做分支对比，也可以直接这样说：
+
+```text
+用 mixpg-case-runner 比较 master 和某个开发分支
+```
+
+或者：
+
+```text
+比较两个分支在 viscoelasticity example 上的运行结果并生成报告
+```
+
+这个“分支对比 mode”只有在用户明确要求比较 branch 时才会启用；普通跑算例不会自动进入这个 mode。
+
 ## 它会怎么和你对话
 
 这个 skill 的默认交互方式是：
@@ -133,6 +147,38 @@ final_time=1.0,
 post_surface_force=allow,
 vis_3d_mixed=allow
 ```
+
+### 4. 明确要求分支对比
+
+```text
+用 mixpg-case-runner 比较 master 和 feature/xxx，在同一个 viscoelasticity case 上跑完并出对比报告
+```
+
+## 分支对比 mode
+
+这个 mode 用于比较两个 source branch 在同一个
+`viscoelasticity_NURBS_TaylorHood` 算例上的行为差异。
+
+它的默认原则是：
+
+- 只有用户明确要求比较 branch 时才启用
+- 两个 branch 必须跑完全相同的 case
+- 两个 branch 必须使用隔离的 source workspace 和隔离的 build 目录
+- 不允许一个 branch 复用另一个 branch 的 build 产物
+- 比较完成后，每个 branch workspace 都必须恢复为无 diff 状态
+
+如果用户只说“比较开发分支和主分支”，skill 应先列出分支供用户确认，再开始执行。
+
+分支对比报告至少应覆盖三层内容：
+
+- workflow 对比：
+  build / preprocess / driver / postprocess 是否成功
+- artifact 对比：
+  关键输出文件是否齐全，例如 `SOL_*`、`Force_disp_record.txt`
+- result 对比：
+  位移、力或 traction 的摘要指标和代表性曲线/图像
+
+如果其中一个 branch 失败，报告应明确写出失败发生在哪个 stage，而不是假装两个 branch 都拿到了可比结果。
 
 ## 运行流程图
 

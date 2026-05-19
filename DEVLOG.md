@@ -38,3 +38,5 @@
 - 2026-05-19：继续根据实际 rerun/preflight 结果收紧 skill：将位移加载方向在 runtime YAML、init YAML、`mixed_ga_driver_displacement.cpp` 与 `PNonlinear_Solver.cpp` 之间的一致性升级为运行前硬阻断条件；若这几处不一致，则不得继续 build、preprocess 或 driver。同时补充本地根目录入口与具名 skill 目录入口应保持同步的安装说明。
 
 - 2026-05-19：新增收尾规则：算例运行完成后，必须把 `MixPG` / `MixPERIGEE` 源仓库中的临时源码与输入改动全部恢复，最终要求源码仓库 `git diff` 为零；不允许把案例配置残留在源仓库里。
+
+- 2026-05-19：为 skill 增加显式的 branch-compare mode 设计规则：仅在用户明确要求时启用；要求先确认 base branch 与 compare branch；要求两个 branch 使用隔离的 source workspace 与 build 目录、运行完全相同的 viscoelasticity case，并按 workflow outcome、artifact outcome 与 result outcome 三层生成对比报告；同时要求比较结束后每个 branch workspace 都恢复为无 diff 状态。
