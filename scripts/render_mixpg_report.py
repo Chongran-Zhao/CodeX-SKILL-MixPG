@@ -51,7 +51,16 @@ def check_exists(path: Path, label: str) -> None:
         raise FileNotFoundError(f"Missing {label}: {path}")
 
 
-def render_surface_traction_figure(force_file: Path, out_path: Path, time_scale: float) -> dict[str, str]:
+def direction_index(loaded_direction: str) -> int:
+    mapping = {"x": 0, "y": 1, "z": 2}
+    if loaded_direction not in mapping:
+        raise ValueError(f"Unsupported loaded direction: {loaded_direction}")
+    return mapping[loaded_direction]
+
+
+def render_surface_traction_figure(
+    force_file: Path, out_path: Path, time_scale: float, loaded_face: str, loaded_direction: str
+) -> dict[str, str]:
     data = np.loadtxt(force_file)
     if data.ndim != 2 or data.shape[1] < 4:
       raise ValueError(f"Unexpected force record shape: {data.shape}")
@@ -80,25 +89,29 @@ def render_surface_traction_figure(force_file: Path, out_path: Path, time_scale:
     ax = axes[0]
     ax.plot(disp, traction, color="#1f4e79", lw=2.2)
     ax.scatter(disp[::10], traction[::10], color="#c23b22", s=16, zorder=3)
-    ax.set_xlabel("Average top-surface displacement in x [m]")
-    ax.set_ylabel("Average top-surface traction in x [Pa]")
-    ax.set_title("Shear traction-displacement response")
+    ax.set_xlabel(f"Average {loaded_face}-surface displacement in {loaded_direction} [m]")
+    ax.set_ylabel(f"Average {loaded_face}-surface traction in {loaded_direction} [Pa]")
+    ax.set_title("Loaded-direction traction-displacement response")
     ax.grid(True, alpha=0.25)
 
     ax = axes[1]
-    ax.plot(time_s, disp, color="#1f4e79", lw=2.0, label="u_x")
+    ax.plot(time_s, disp, color="#1f4e79", lw=2.0, label=f"u_{loaded_direction}")
     ax2 = ax.twinx()
-    ax2.plot(time_s, traction, color="#c23b22", lw=1.8, label="t_x")
+    ax2.plot(time_s, traction, color="#c23b22", lw=1.8, label=f"t_{loaded_direction}")
     ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Average top-surface displacement in x [m]", color="#1f4e79")
-    ax2.set_ylabel("Average top-surface traction in x [Pa]", color="#c23b22")
-    ax.set_title("Time histories on the loaded top surface")
+    ax.set_ylabel(
+        f"Average {loaded_face}-surface displacement in {loaded_direction} [m]", color="#1f4e79"
+    )
+    ax2.set_ylabel(
+        f"Average {loaded_face}-surface traction in {loaded_direction} [Pa]", color="#c23b22"
+    )
+    ax.set_title(f"Time histories on the loaded {loaded_face} surface")
     ax.grid(True, alpha=0.25)
     lines = ax.get_lines() + ax2.get_lines()
     labels = [line.get_label() for line in lines]
     ax.legend(lines, labels, loc="upper right", frameon=False)
 
-    fig.suptitle("Top-face x-shear postprocess summary", fontsize=13)
+    fig.suptitle(f"{loaded_face.capitalize()}-face {loaded_direction}-direction postprocess summary", fontsize=13)
     fig.savefig(out_path, facecolor="white", bbox_inches="tight")
     plt.close(fig)
 
@@ -115,13 +128,14 @@ def render_surface_traction_figure(force_file: Path, out_path: Path, time_scale:
     }
 
 
-def render_visualization_figure(build_dir: Path, peak_step: int, out_path: Path) -> None:
+def render_visualization_figure(build_dir: Path, peak_step: int, out_path: Path, loaded_direction: str) -> None:
     vtus = sorted(glob.glob(str(build_dir / f"SOL_{peak_step:08d}_p*.vtu")))
     if not vtus:
         raise FileNotFoundError(f"No VTU files found for step {peak_step}")
 
+    disp_idx = direction_index(loaded_direction)
     all_points = []
-    all_ux = []
+    all_ud = []
     for path in vtus:
         mesh = meshio.read(path)
         if "Displacement" not in mesh.point_data:
@@ -129,25 +143,25 @@ def render_visualization_figure(build_dir: Path, peak_step: int, out_path: Path)
         points = mesh.points[:, :3]
         disp = mesh.point_data["Displacement"]
         all_points.append(points + disp)
-        all_ux.append(disp[:, 0])
+        all_ud.append(disp[:, disp_idx])
 
     pts = np.vstack(all_points)
-    ux = np.hstack(all_ux)
+    udir = np.hstack(all_ud)
 
     stride = max(1, len(pts) // 2500)
     pts = pts[::stride]
-    ux = ux[::stride]
+    udir = udir[::stride]
 
     fig = plt.figure(figsize=(7.0, 6.0), constrained_layout=True)
     ax = fig.add_subplot(111, projection="3d")
-    sc = ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], c=ux, cmap="coolwarm", s=8, alpha=0.9)
+    sc = ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], c=udir, cmap="coolwarm", s=8, alpha=0.9)
     ax.set_xlabel("x [m]")
     ax.set_ylabel("y [m]")
     ax.set_zlabel("z [m]")
-    ax.set_title(f"Deformed configuration at peak positive shear (step {peak_step})")
+    ax.set_title(f"Deformed configuration at representative loaded-direction peak (step {peak_step})")
     ax.view_init(elev=22, azim=-58)
     cb = fig.colorbar(sc, ax=ax, shrink=0.72, pad=0.08)
-    cb.set_label("u_x [m]")
+    cb.set_label(f"u_{loaded_direction} [m]")
     fig.savefig(out_path, facecolor="white", bbox_inches="tight")
     plt.close(fig)
 
@@ -176,8 +190,10 @@ def main() -> int:
     report_md = report_dir / "report.md"
     report_pdf = report_dir / "report.pdf"
 
-    stats = render_surface_traction_figure(force_file, traction_fig, args.time_scale)
-    render_visualization_figure(build_dir, args.peak_step, vis_fig)
+    stats = render_surface_traction_figure(
+        force_file, traction_fig, args.time_scale, args.loaded_face, args.loaded_direction
+    )
+    render_visualization_figure(build_dir, args.peak_step, vis_fig, args.loaded_direction)
 
     values = {
         "case_title": args.case_title,
