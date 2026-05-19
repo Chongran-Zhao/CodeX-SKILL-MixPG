@@ -184,6 +184,18 @@ The comparison report should distinguish at least three layers:
   summary metrics and representative plots for displacement, force, or
   traction, using the same case definition on both branches
 
+Use a branch-compare report variant when the run is in compare mode. Do not
+reuse the single-run report as-is. The branch-compare report should include:
+
+- base branch and compare branch names
+- commit hashes for both branches
+- one shared case summary, not two divergent case descriptions
+- workflow outcome table for both branches
+- artifact readiness table for both branches
+- overlaid result curves when both branches finish successfully
+- representative visualization readiness or images for both branches, clearly
+  labeled by branch
+
 If one branch fails, report that explicitly instead of forcing a symmetric
 result table.
 
@@ -217,6 +229,12 @@ Required rule:
 - when using `mpirun ... | tee driver_log.txt`, preserve the `mpirun` exit
   status with `set -o pipefail` or an equivalent check; do not trust the shell
   pipeline status alone
+- when comparing post-surface-force curves, run `post_surface_force` with the
+  current run's explicit `-time_end`; do not rely on its executable default,
+  because the default may only process the first output interval
+- compare-mode visualization readiness must be checked independently for both
+  build directories; do not treat a template `paras_pos_vis.yml.time_end` as
+  valid if it exceeds either branch's available solution output range
 
 At each checkpoint, briefly report:
 
@@ -638,7 +656,7 @@ Standard order:
 
 1. `<matched_mpi_launcher> -np <cpu_size> ./reanalysis_proj_driver -time_end <time_end>`
 2. `./prepostproc`
-3. `<matched_mpi_launcher> -np <cpu_size> ./post_surface_force`
+3. `<matched_mpi_launcher> -np <cpu_size> ./post_surface_force -time_end <time_end>`
 4. whichever downstream tool the user wants, for example:
    `<matched_mpi_launcher> -np <cpu_size> ./vis_3d_mixed -time_end <time_end>`
 
@@ -686,6 +704,9 @@ If `post_surface_force` is requested or part of the default postprocess chain:
 - if the case uses multiple loaded faces or patches, add one entry per target surface
 - update the output record so the reported displacement and force components match the loaded direction
 - synchronize the post-surface-force time range with the finished run so it processes the full intended index range, for example `time_end = 100` for `1.0 / 0.01`
+- pass the synchronized range explicitly on the command line, for example
+  `./post_surface_force -time_end 100`, because the executable default may
+  only process the first output interval
 
 For simple single-direction loading, keep the surface-force output minimal:
 

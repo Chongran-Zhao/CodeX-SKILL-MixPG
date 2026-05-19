@@ -179,6 +179,14 @@ vis_3d_mixed=allow
 - result 对比：
   位移、力或 traction 的摘要指标和代表性曲线/图像
 
+当进入 branch compare mode 时，报告也应切换到 branch-compare 版本，而不是直接复用单分支报告：
+
+- 写清楚 base branch、compare branch 和两个 commit hash
+- 只写一份共享 case 定义，避免两个分支出现不一致描述
+- 用表格并列展示两个分支的 workflow outcome 和 artifact readiness
+- 如果两个分支都成功，优先生成叠加曲线，例如位移-traction 曲线
+- 可视化图片或 readiness 也要按 branch 分开标记
+
 如果其中一个 branch 失败，报告应明确写出失败发生在哪个 stage，而不是假装两个 branch 都拿到了可比结果。
 
 另外，compare mode 不能只看“两个 branch 都跑起来了”：
@@ -198,6 +206,14 @@ driver 失败判定也要特别小心：
 - 即使 shell 返回 `0`，只要 `driver_log.txt` 里出现 `MPI_Abort`、
   `local_NR_iteration solver is diverging` 这类明确致命标记，也必须按 driver
   失败处理
+
+后处理对比也要避免模板默认值误导：
+
+- `post_surface_force` 必须显式传入当前 run 的 `-time_end`，例如
+  `./post_surface_force -time_end 100`
+- 不能依赖 `post_surface_force` 的默认 `time_end`，否则可能只处理前一两个时间点
+- branch compare 报告前，要分别检查两个 build 目录里的
+  `paras_pos_vis.yml.time_end` 是否超过实际可用的 `SOL_*` 输出范围
 
 还有一条很重要：
 
