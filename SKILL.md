@@ -187,6 +187,10 @@ The comparison report should distinguish at least three layers:
 If one branch fails, report that explicitly instead of forcing a symmetric
 result table.
 
+If both branches fail at the same stage on the same shared case, do not report
+that as a successful comparison. Treat it as a shared-case instability or
+shared operational failure until proven otherwise.
+
 ### Compare-mode sanity checks
 
 Do not treat "both branches ran" as sufficient evidence of a meaningful
@@ -203,6 +207,16 @@ Required rule:
   case-appropriate scalar response
 - if the response is trivially zero on both branches, stop and fix the shared
   case definition before moving on to downstream comparison reporting
+- if both branches diverge or abort at the same early stage on the same shared
+  case, stop and report that as a shared-case failure; do not continue to
+  postprocess or branch-result reporting
+- for compare mode, treat driver success as false if the MPI command is piped
+  through `tee` and the log still contains fatal evidence such as
+  `MPI_Abort`, `local_NR_iteration solver is diverging`, or another explicit
+  solver-abort marker
+- when using `mpirun ... | tee driver_log.txt`, preserve the `mpirun` exit
+  status with `set -o pipefail` or an equivalent check; do not trust the shell
+  pipeline status alone
 
 At each checkpoint, briefly report:
 
@@ -595,6 +609,7 @@ Choose the executable by loading type:
 Run with:
 
 ```bash
+set -o pipefail
 <matched_mpi_launcher> -np <cpu_size> <driver_executable> | tee driver_log.txt
 ```
 
@@ -603,6 +618,8 @@ Rules:
 - `-np` must match preprocessor `cpu_size`
 - default `cpu_size` is `6`
 - always save output to `driver_log.txt`
+- do not treat pipeline exit status `0` as sufficient if `driver_log.txt`
+  contains fatal solver or MPI-abort markers
 - do not use whichever `mpirun` or `mpiexec` appears first in `PATH`
 - use an explicitly chosen launcher that matches the MPI installation linked by
   the driver executable

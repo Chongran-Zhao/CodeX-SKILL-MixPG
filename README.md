@@ -186,6 +186,18 @@ vis_3d_mixed=allow
 - 如果共享 case 实际上没有被正确激活，两个 branch 可能都会给出全零响应
 - 这不应被当成“结果一致”
 - 在进入正式对比报告前，skill 至少要检查一个简单响应量是否非零，例如位移、力或 traction 曲线
+- 如果两个 branch 在同一个共享 case 上、同一个早期 stage 一起发散或一起
+  `MPI_Abort`，这也不应被当成“对比成功”
+- 这种情况应先归类为共享 case 不稳定或共享运行失败，而不是分支差异结论
+
+driver 失败判定也要特别小心：
+
+- 如果命令写成 `mpirun ... | tee driver_log.txt`，不能只看 shell 表面的退出码
+- compare mode 和单分支 mode 都必须保留 `mpirun` 的真实退出状态，例如使用
+  `set -o pipefail`
+- 即使 shell 返回 `0`，只要 `driver_log.txt` 里出现 `MPI_Abort`、
+  `local_NR_iteration solver is diverging` 这类明确致命标记，也必须按 driver
+  失败处理
 
 还有一条很重要：
 
