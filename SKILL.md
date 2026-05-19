@@ -306,6 +306,9 @@ If displacement loading:
 - in `paras_preprocessor_init.yml`, keep only the unique loaded direction-face entry
 - encode the displacement time law in `disp_loading(...)`
 - encode its derivative in `velo_loading(...)`
+- keep displacement-driven loading smooth by default
+- avoid abrupt jumps, kinks, or other discontinuities in displacement or velocity unless the user explicitly asks for them
+- when choosing a default displacement history, prefer sinusoidal, smooth ramped, or other profiles with continuous velocity
 - in `PNonlinear_Solver.cpp`, make sure the imposed basis vector matches the requested direction:
   use `base_x` for x displacement, `base_y` for y displacement, and `base_z` for z displacement
 - if the case is uniaxial displacement tension, constrain the other two directions on the loaded face to zero in `paras_preprocessor.yml`
@@ -595,6 +598,8 @@ Required reporting behavior:
 - export at least one representative visualization image for the current run
 - place that image in `~/build_MixPG/report`
 - include it in the final report
+- if the image is produced by a local plotting script from `vis_3d_mixed` output files, describe it accurately as a generated visualization figure
+- only call it a ParaView preview or ParaView screenshot when it actually comes from a ParaView render or screenshot workflow
 
 ### Report content rule
 
