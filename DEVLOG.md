@@ -36,3 +36,5 @@
 - 2026-05-19：根据当前 MixPG 版本的真实源码行为补充 skill 规则：明确 `geo_file_base` 会被 preprocess 代码追加 HOME 前缀，因此 build 几何应优先使用 `/build_MixPG/patch` 这类 HOME 相对 YAML 写法；要求位移方向切换时同时检查 `mixed_ga_driver_displacement.cpp` 的初始速度基向量和 `PNonlinear_Solver.cpp` 的施加方向；明确 `reanalysis_proj_driver` 不能依赖默认 `-vis_m 1`，必须按当前材料模型的 internal-variable/relaxation 个数显式传参；同时补充大变形默认尝试不等于默认保证收敛、旧运行说明让位于当前源码/可执行程序行为、以及 driver 发散后不得继续包装最终报告等规则。
 
 - 2026-05-19：继续根据实际 rerun/preflight 结果收紧 skill：将位移加载方向在 runtime YAML、init YAML、`mixed_ga_driver_displacement.cpp` 与 `PNonlinear_Solver.cpp` 之间的一致性升级为运行前硬阻断条件；若这几处不一致，则不得继续 build、preprocess 或 driver。同时补充本地根目录入口与具名 skill 目录入口应保持同步的安装说明。
+
+- 2026-05-19：新增收尾规则：算例运行完成后，必须把 `MixPG` / `MixPERIGEE` 源仓库中的临时源码与输入改动全部恢复，最终要求源码仓库 `git diff` 为零；不允许把案例配置残留在源仓库里。

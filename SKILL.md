@@ -12,6 +12,7 @@ Use this skill as a task-friendly execution guide. Do not simulate a separate pr
 - make checkpoints explicit
 - stop immediately on blocking failures
 - never create git commits inside the source-file repository that is being edited or used for the scientific case setup
+- after the run is finished, restore all temporary source edits so the MixPG source repository ends with no diff
 - do not collapse or hide any terminal commands or terminal outputs during reasoning or execution; show the exact commands and their outputs in full
 
 ## User Input Policy
@@ -151,6 +152,23 @@ and if you do:
 - list exactly which build-directory files were changed
 - do not also change the corresponding source files in the same pass unless the
   user explicitly asks to reconcile them
+
+### Clean source tree on exit
+
+The MixPG source repository is a temporary editing workspace for case setup, not
+the final artifact.
+
+Required rule:
+
+- after a run finishes, restore all source-repository edits made for the case
+- the final state of the MixPG source repository must be `git diff` clean
+- do not leave case-specific YAML, `LoadData.hpp`, solver-direction changes, or
+  postprocess-source tweaks behind in the source tree
+- generated results belong in `~/build_MixPG` and its `report/` directory, not
+  as persistent diffs in the source repository
+
+Before declaring completion, verify that the MixPG source repository has no
+remaining diff. If it is not clean, the task is not fully finished.
 
 ### Single execution entrypoint
 

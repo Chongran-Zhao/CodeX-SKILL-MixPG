@@ -275,6 +275,7 @@ python3 /Users/chongran/CodeX-SKILL-MixPG/scripts/render_mixpg_report.py ...
 - 默认 build 目录策略现在是：`clean`
   默认删除原有 `~/build_MixPG` 再重建
 - 不允许在科学算例使用的源文件仓库内直接创建 git commit
+- 运行完成后，必须把 `MixPG` / `MixPERIGEE` 源仓库里的临时改动全部恢复掉，最终不允许留下任何 `git diff`
 - 在执行过程中，不应折叠 terminal 命令或输出
 - 如果 `geo_file_base`、`cpu_size`、`time_end` 或 postprocess 依赖不一致，应明确失败而不是猜测继续
 - 如果 driver 已经出现非线性发散，即使产生了部分 `SOL_*` 文件，也不能把这次运行包装成“成功完成”并继续生成最终报告
