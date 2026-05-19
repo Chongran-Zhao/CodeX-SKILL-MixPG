@@ -193,8 +193,30 @@ reuse the single-run report as-is. The branch-compare report should include:
 - workflow outcome table for both branches
 - artifact readiness table for both branches
 - overlaid result curves when both branches finish successfully
+- detailed comparison of `driver_log.txt`
+- detailed comparison of `time_energy_data.txt`
+- detailed comparison of `Force_disp_record.txt`
+- detailed comparison of `post_surface_force_log.txt`
 - representative visualization readiness or images for both branches, clearly
   labeled by branch
+
+For these detailed comparisons, create screenshot-style diff figures in the
+compare report directory. The visual rule is strict:
+
+- use a standard diff-like red/green convention
+- red marks the `base` or `master` side
+- green marks the `compare` branch side
+- unchanged content must stay visually neutral
+- do not color an entire line when only a small numeric value or timestamp
+  differs
+- for driver logs, prefer inline highlighting of the changed fragments within
+  each changed line
+- for numeric tables such as `time_energy_data.txt`, color only the cells or
+  values with nonzero differences
+- if `Force_disp_record.txt` or `post_surface_force_log.txt` are identical,
+  show that clearly without adding decorative color
+- keep the full machine-readable or HTML diff artifacts next to the report so
+  the screenshot is not the only evidence
 
 If one branch fails, report that explicitly instead of forcing a symmetric
 result table.

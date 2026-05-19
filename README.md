@@ -186,6 +186,13 @@ vis_3d_mixed=allow
 - 用表格并列展示两个分支的 workflow outcome 和 artifact readiness
 - 如果两个分支都成功，优先生成叠加曲线，例如位移-traction 曲线
 - 可视化图片或 readiness 也要按 branch 分开标记
+- 必须比较 `driver_log.txt`，并把不同部分以截图式 diff 展示
+- 必须比较 `time_energy_data.txt`，并把不同数值以截图式 diff 或表格展示
+- 必须比较 `Force_disp_record.txt` 和 `post_surface_force_log.txt`
+- diff 图只给真正不同的片段或单元格上色，相同内容保持普通颜色
+- driver log 不应整行上色；应优先只标出行内变化的时间戳、残差数值或其它不同片段
+- 如果 `Force_disp_record.txt` 或 `post_surface_force_log.txt` 完全一致，报告应明确写“一致”，不要为了视觉效果添加颜色
+- 完整 HTML diff 或机器可读 diff 也应放在 compare report 目录里，方便复查
 
 如果其中一个 branch 失败，报告应明确写出失败发生在哪个 stage，而不是假装两个 branch 都拿到了可比结果。
 
