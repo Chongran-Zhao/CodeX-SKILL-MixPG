@@ -179,6 +179,11 @@ Required checks:
 Do not "try several path variants" during normal execution. If the resolved
 path is unsafe or ambiguous, stop and explain the blocker.
 
+When old notes, template files, and current source behavior disagree, prefer
+the current executable/source behavior over stale prose notes. Verify the real
+behavior from the current example sources before turning it into an execution
+rule.
+
 ### Build-script invocation rule
 
 Do not rely on the executable bit of the build-preparation script.
@@ -247,14 +252,20 @@ Files you may need to edit:
 
 Rules:
 
-- if the user gives an absolute path, use it exactly as given
-- do not prepend `HOME` or any other root to an absolute path
-- if the user gives a relative path, resolve it explicitly and report the resolved absolute path
+- in the current `preprocess3d_main.cpp` and `preprocess3d_init.cpp`,
+  `geo_file_base` is constructed by prefixing `HOME`
+- therefore, for this current MixPG version, do not write a full
+  `/Users/<name>/...` absolute path into the YAML when that would be prefixed by
+  `HOME` again
+- for geometry staged in `~/build_MixPG`, prefer a HOME-relative YAML value
+  such as `/build_MixPG/patch`
+- if the user gives a path that would become duplicated after HOME-prefix
+  expansion, stop and explain the conflict instead of proceeding
 - before running preprocessing, verify that `geo_file_base + "0.yml"` exists
 
 Example:
 
-- correct base: `/Users/chongran/build_MixPG/patch`
+- correct YAML base for current preprocess code: `/build_MixPG/patch`
 - expected file: [`/Users/chongran/build_MixPG/patch0.yml`](/Users/chongran/build_MixPG/patch0.yml)
 
 Do not generate broken paths like:
@@ -301,6 +312,7 @@ If displacement loading:
 
 - edit `paras_preprocessor.yml`
 - edit `paras_preprocessor_init.yml`
+- edit `examples/viscoelasticity_NURBS_TaylorHood/mixed_ga_driver_displacement.cpp` if the loaded direction changes and the initialization basis still points to the old direction
 - edit `examples/viscoelasticity_NURBS_TaylorHood/src/PNonlinear_Solver.cpp` if the loaded direction changes
 - in `paras_preprocessor.yml`, keep the full runtime boundary setup
 - in `paras_preprocessor_init.yml`, keep only the unique loaded direction-face entry
@@ -309,8 +321,16 @@ If displacement loading:
 - keep displacement-driven loading smooth by default
 - avoid abrupt jumps, kinks, or other discontinuities in displacement or velocity unless the user explicitly asks for them
 - when choosing a default displacement history, prefer sinusoidal, smooth ramped, or other profiles with continuous velocity
+- if the requested default case targets a large deformation, such as stretch
+  ratio `>= 1.5`, keep the loading smooth but do not assume the current default
+  `initial_step`, `final_time`, and material parameters will necessarily remain
+  stable
 - in `PNonlinear_Solver.cpp`, make sure the imposed basis vector matches the requested direction:
   use `base_x` for x displacement, `base_y` for y displacement, and `base_z` for z displacement
+- in `mixed_ga_driver_displacement.cpp`, also make sure the prescribed initial
+  velocity basis matches the requested direction:
+  use `base_x` for x displacement, `base_y` for y displacement, and `base_z`
+  for z displacement
 - if the case is uniaxial displacement tension, constrain the other two directions on the loaded face to zero in `paras_preprocessor.yml`
 - later run `preprocess3d` then `preprocess3d_init`
 
@@ -382,6 +402,7 @@ Consistency checks:
 - displacement-loaded face must not also appear in `EBC`
 - traction-loaded face must be declared in `EBC`
 - requested displacement direction must match the edited `Dirichlet_velo_*` block
+- requested displacement direction must also match the initialization basis used in `mixed_ga_driver_displacement.cpp`
 - requested displacement direction must also match the `base_*` vector used in `PNonlinear_Solver.cpp`
 - for uniaxial displacement tension, the loaded face must also be constrained to zero in the other two directions
 - requested load duration must match the time law and `paras_driver.yml`
@@ -489,11 +510,18 @@ Rules:
 - do not say that `vis_3d_mixed` has been run unless its command was actually executed and finished successfully
 - use `prepostproc`, not the old `prepost` name
 - `-time_end` is a step index, not physical time
+- `simulation_running_note.txt` may be stale about exact executable names or
+  command forms; when it conflicts with the built executable names or working
+  command sequence, trust the built executable reality
 - before running `vis_3d_mixed`, update `paras_pos_vis.yml` so `time_start`, `time_step`, and `time_end` match the finished run
 - if `paras_pos_vis.yml.time_end` exceeds the highest available `SOL_*.pvtu` index from the current run, treat visualization as not ready and fail clearly instead of attempting `vis_3d_mixed`
 - if `post_surface_force` or `vis_3d_mixed` is enabled, update the corresponding inputs before execution instead of assuming the template is already correct
 - if `post_surface_force` or `vis_3d_mixed` is enabled, synchronize their processed time-step range with the finished run
 - if `vis_3d_mixed` is enabled, check that its material-model-related settings and the expected number of internal variables are consistent with the finished run before treating visualization as safe
+- before running `reanalysis_proj_driver`, derive `vis_m` from the current
+  constitutive model and pass it explicitly; do not rely on the current source
+  default `-vis_m 1` when the model has multiple relaxation/internal-variable
+  groups
 
 ### Surface-force postprocess rule
 
@@ -539,6 +567,8 @@ Consistency checks:
 
 - `paras_pos_vis.yml.time_end` must not exceed the highest available `SOL_*.pvtu` index
 - the visualization time range must match the finished run instead of an example template
+- the template `paras_pos_vis.yml` may carry a very large placeholder
+  `time_end`; never assume it is already safe for the current run
 - the material-model-related visualization settings must match the actual solved case
 - the expected internal-variable count must match the generated outputs for the solved case
 
@@ -568,6 +598,8 @@ Default reporting rule:
 - write the report in Markdown first
 - then convert the Markdown report to PDF
 - only fill in case-specific values, figures, and short interpretation text for the current run
+- do not generate or present a final report as complete if the driver diverged,
+  even when partial `SOL_*` outputs exist
 
 ### Surface-force figure rule
 

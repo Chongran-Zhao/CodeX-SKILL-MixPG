@@ -187,6 +187,22 @@ skill 常见会确认这些信息：
 - 尽量保持位移和速度都是光滑加载
 - 默认避免任何突变、折点或不连续速度
 - 如果没有特别说明，优先选用 `sin`、平滑 ramp 或其他速度连续的位移历程
+- 如果目标是很大的拉伸，比如伸长比 `>= 1.5`，skill 会默认先尝试平滑加载，但不会假装保证当前默认时间步和材料参数一定稳定；如果 driver 发散，会明确停下，而不是偷偷改科学参数
+
+## 当前版本的几个关键护栏
+
+这个 skill 现在明确按当前 MixPG 版本的真实代码行为来工作，而不只看旧说明文档。
+
+- `geo_file_base`：
+  当前 `preprocess3d` / `preprocess3d_init` 会给 `geo_file_base` 自动加 `HOME` 前缀，所以像 `~/build_MixPG/patch` 这类 build 几何，YAML 里更安全的写法是 `/build_MixPG/patch`，而不是直接写 `/Users/<name>/build_MixPG/patch`
+- 位移方向一致性：
+  改位移加载方向时，不只要看 `LoadData.hpp` 和 `PNonlinear_Solver.cpp`，还要检查 `mixed_ga_driver_displacement.cpp` 里的初始速度基向量是不是同一个方向
+- `reanalysis_proj_driver -vis_m`：
+  当前源码默认 `vis_m = 1`，但如果材料模型有多个 Maxwell / internal-variable 分支，skill 必须显式传正确的 `-vis_m`，不能偷懒用默认值
+- `paras_pos_vis.yml.time_end`：
+  模板文件里的 `time_end` 可能只是很大的占位值，不能直接拿来跑；必须先和当前实际 `SOL_*` 输出范围对齐
+- 旧运行说明：
+  如果 `simulation_running_note.txt` 这类旧说明和当前可执行程序或真实命令顺序冲突，skill 会以当前源码和当前 build 出来的可执行程序为准
 
 ## 报告交付
 
@@ -249,6 +265,7 @@ python3 /Users/chongran/CodeX-SKILL-MixPG/scripts/render_mixpg_report.py ...
 - 不允许在科学算例使用的源文件仓库内直接创建 git commit
 - 在执行过程中，不应折叠 terminal 命令或输出
 - 如果 `geo_file_base`、`cpu_size`、`time_end` 或 postprocess 依赖不一致，应明确失败而不是猜测继续
+- 如果 driver 已经出现非线性发散，即使产生了部分 `SOL_*` 文件，也不能把这次运行包装成“成功完成”并继续生成最终报告
 
 ## 相关文件
 

@@ -32,3 +32,5 @@
 - 2026-05-18：新增固定报告渲染脚本 `scripts/render_mixpg_report.py`，把绘图、模板填充和 PDF 导出收敛成稳定入口；同时在 skill 和 README 中明确后续应优先复用该脚本，而不是每次临时从零组织报告流程。
 - 2026-05-19：补充位移加载默认规则：若用户未特别要求，优先选择位移和速度都光滑连续的加载历程，避免突变、折点和速度不连续；默认优先 `sin` 或其他平滑 profile。
 - 2026-05-19：补充可视化表述规则：若报告中的云图来自 `vis_3d_mixed` 输出再绘制的图片，应如实描述为生成的可视化图，不能冒充 ParaView 预览；只有真实经过 ParaView 渲染或截图时才能这样表述。
+
+- 2026-05-19：根据当前 MixPG 版本的真实源码行为补充 skill 规则：明确 `geo_file_base` 会被 preprocess 代码追加 HOME 前缀，因此 build 几何应优先使用 `/build_MixPG/patch` 这类 HOME 相对 YAML 写法；要求位移方向切换时同时检查 `mixed_ga_driver_displacement.cpp` 的初始速度基向量和 `PNonlinear_Solver.cpp` 的施加方向；明确 `reanalysis_proj_driver` 不能依赖默认 `-vis_m 1`，必须按当前材料模型的 internal-variable/relaxation 个数显式传参；同时补充大变形默认尝试不等于默认保证收敛、旧运行说明让位于当前源码/可执行程序行为、以及 driver 发散后不得继续包装最终报告等规则。
