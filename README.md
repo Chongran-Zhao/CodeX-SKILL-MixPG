@@ -349,7 +349,8 @@ python3 /Users/chongran/CodeX-SKILL-MixPG/scripts/render_mixpg_report.py ...
 它的职责就是：
 
 - 读取现成的 `Force_disp_record.txt` 和 `vis_3d_mixed` 结果
-- 生成科研风格图片
+- 根据当前 loaded face 和 loaded direction 生成科研风格图片
+- 力学图和可视化图不能固化为 `top` 面或 `x` 方向；应跟随本次算例的加载面与加载方向
 - 用模板填充 Markdown 报告
 - 导出 PDF
 

@@ -47,3 +47,4 @@
 - 2026-05-20：根据 branch-compare 报告迭代反馈，补充详细 diff 报告规则：compare 报告必须比较 `driver_log.txt`、`time_energy_data.txt`、`Force_disp_record.txt` 和 `post_surface_force_log.txt`；需要生成截图式 diff 图和完整 HTML/机器可读 diff；视觉上只允许给真正不同的行内片段或数值单元格上色，相同内容保持普通颜色，driver log 尤其不能整行上色，post-surface-force 完全一致时应明确写一致而不是添加装饰性颜色。
 - 2026-05-20：收紧默认可视化规则：`vis_3d_mixed` 默认不仅是 allow，而是正常后处理和报告流程中必须实际运行的步骤；若 readiness 检查失败，应报告为可视化/报告阶段阻断，而不是把“已就绪”当作已完成。
 - 2026-05-20：泛化报告渲染脚本，使表面力学图和可视化图按当前 loaded face 与 loaded direction 标注和取分量，避免报告继续固化为 top-face x-direction 模板。
+- 2026-05-20：同步补充 README，明确固定报告脚本生成的力学图和可视化图必须跟随本次算例的 loaded face 与 loaded direction，不能继续固化为 `top` 面或 `x` 方向。
